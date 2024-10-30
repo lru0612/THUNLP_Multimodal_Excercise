@@ -222,6 +222,7 @@ Explicit Rewards](https://arxiv.org/abs/2402.05369)
   - `chair_300.pkl`: CHAIR 评测GT数据
   - `flash_attn-2.3.4+cu118torch2.1cxx11abiFALSE-cp310-cp310-linux_x86_64.whl`: flash-attention 库 wheel 文件
   - `nltk_data.tar.gz`: CHAIR评测中所需 nltk 库数据。下载后解压到 `/home/user` 目录下
+  - `objhal_bench.jsonl`: 幻觉评测集
   - `preference_train.json`: 偏好对齐训练数据
   - `sft_images.tar.gz`: `data/train.json` 及 `data/test.json` 中涉及的图片数据。下载后，请将其解压在 `data/`目录下，并将解压后的文件夹重命名为 `images`
 
