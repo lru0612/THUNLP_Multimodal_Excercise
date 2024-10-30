@@ -72,7 +72,7 @@ Transformer[1] 模型是现代自然语言处理的核心，也是目前主流�
 **参考论文：** [1] [Object Hallucination in Image Captioning](https://arxiv.org/abs/1809.02156)
 
 **任务描述：**
-1. 使用编写好的 [eval/model_eval.py](eval/model_eval.py) 代码，在 `data/objhal_bench.jsonl` 数据上进行推理，并运行 [eval/eval_chair.py](eval/eval_chair.py) 计算 CHAIR 得分。
+1. 使用编写好的 [eval/model_eval.py](eval/model_eval.py) 代码，在[objhal_bench.jsonl](https://drive.google.com/drive/folders/1j2kw_UZZq1JXfZI644RGNZzbLIB7bTT5) 数据上进行推理，并运行 [eval/eval_chair.py](eval/eval_chair.py) 计算 CHAIR 得分。
 2. 控制模型进行随机解码（sampling decoding）、贪婪解码（greedy search）以及束搜索解码（beam search），观察总结不同解码策略下的模型输出特性。
 
 **要求：** 模型的 CHAIR 得分应当接近 **CHAIRs = 32.7, CHAIRi = 8.5, Recall = 61.7, Len = 126**
