@@ -222,11 +222,14 @@ Explicit Rewards](https://arxiv.org/abs/2402.05369)
   - `chair_300.pkl`: CHAIR 评测GT数据
   - `flash_attn-2.3.4+cu118torch2.1cxx11abiFALSE-cp310-cp310-linux_x86_64.whl`: flash-attention 库 wheel 文件
   - `nltk_data.tar.gz`: CHAIR评测中所需 nltk 库数据。下载后解压到 `/home/user` 目录下
+  - `objhal_bench.jsonl`: 幻觉评测集
   - `preference_train.json`: 偏好对齐训练数据
-  - `MLLM_model/`: 模型文件
   - `sft_images.tar.gz`: `data/train.json` 及 `data/test.json` 中涉及的图片数据。下载后，请将其解压在 `data/`目录下，并将解压后的文件夹重命名为 `images`
 
-### 2. 环境配置
+### 2. 模型下载
+- 下载地址：https://huggingface.co/HaoyeZhang/MLLM_Excercise_Model
+
+### 3. 环境配置
 ```bash
 # 使用 anaconda 新建虚拟环境
 conda create -n MiniCPM-V python=3.10 -y
