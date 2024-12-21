@@ -112,7 +112,6 @@ def preference_collator_fn(instances, pad_token_id=0, max_length=2048):
         win_batch['labels'], rej_batch['labels'], -100)
     concatenated_position_ids = concate_pad(
         win_batch['position_ids'], rej_batch['position_ids'], pad_token_id)
-    concatenated_attention_mask = concatenated_input_ids.ne(pad_token_id)
 
     batch = dict(
         concatenated_input_ids=concatenated_input_ids,
@@ -123,7 +122,6 @@ def preference_collator_fn(instances, pad_token_id=0, max_length=2048):
         rej_labels=rej_batch['labels'],
 
         concatenated_position_ids=concatenated_position_ids,
-        concatenated_attention_mask=concatenated_attention_mask,
 
         images=win_batch['pixel_values'] + win_batch['pixel_values'],
         image_bound=win_batch['image_bound'] + win_batch['image_bound'],
