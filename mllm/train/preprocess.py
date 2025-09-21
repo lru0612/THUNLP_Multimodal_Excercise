@@ -16,6 +16,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
 @dataclass
 class PreferenceDatasetDataCollator(object):
     tokenizer: transformers.PreTrainedTokenizer
@@ -27,61 +28,96 @@ class PreferenceDatasetDataCollator(object):
 
         rej_instances, win_instances = list(zip(*instances))
 
-        batch['beta'] = self.beta
-        batch['ref_win_logp'] = torch.as_tensor(
-            [x['ref_win_logp'] for x in win_instances])
-        batch['ref_rej_logp'] = torch.as_tensor(
-            [x['ref_rej_logp'] for x in rej_instances])
-        batch['ref_win_avg_logp'] = torch.as_tensor(
-            [x['ref_win_avg_logp'] for x in win_instances])
-        batch['ref_rej_avg_logp'] = torch.as_tensor(
-            [x['ref_rej_avg_logp'] for x in rej_instances])
+        batch["beta"] = self.beta
+        batch["ref_win_logp"] = torch.as_tensor(
+            [x["ref_win_logp"] for x in win_instances]
+        )
+        batch["ref_rej_logp"] = torch.as_tensor(
+            [x["ref_rej_logp"] for x in rej_instances]
+        )
+        batch["ref_win_avg_logp"] = torch.as_tensor(
+            [x["ref_win_avg_logp"] for x in win_instances]
+        )
+        batch["ref_rej_avg_logp"] = torch.as_tensor(
+            [x["ref_rej_avg_logp"] for x in rej_instances]
+        )
 
         # print("datacollator_dpodataset: batch['ref_win_logp']:", batch['ref_win_logp'].dtype, batch['ref_win_logp'].item())
 
-        ref_win_per_token_logp = [torch.as_tensor(
-            x['ref_win_per_token_logp']) for x in win_instances]
-        ref_rej_per_token_logp = [torch.as_tensor(
-            x['ref_rej_per_token_logp']) for x in rej_instances]
+        ref_win_per_token_logp = [
+            torch.as_tensor(x["ref_win_per_token_logp"]) for x in win_instances
+        ]
+        ref_rej_per_token_logp = [
+            torch.as_tensor(x["ref_rej_per_token_logp"]) for x in rej_instances
+        ]
 
-        batch['ref_win_per_token_logp'] = torch.nn.utils.rnn.pad_sequence(
-            ref_win_per_token_logp, batch_first=True, padding_value=0)
-        batch['ref_rej_per_token_logp'] = torch.nn.utils.rnn.pad_sequence(
-            ref_rej_per_token_logp, batch_first=True, padding_value=0)
+        batch["ref_win_per_token_logp"] = torch.nn.utils.rnn.pad_sequence(
+            ref_win_per_token_logp, batch_first=True, padding_value=0
+        )
+        batch["ref_rej_per_token_logp"] = torch.nn.utils.rnn.pad_sequence(
+            ref_rej_per_token_logp, batch_first=True, padding_value=0
+        )
 
-        win_input_ids = batch['win_input_ids']
-        rej_input_ids = batch['rej_input_ids']
+        win_input_ids = batch["win_input_ids"]
+        rej_input_ids = batch["rej_input_ids"]
 
-        assert batch['ref_win_per_token_logp'].size(1) >= win_input_ids.size(
-            1) - 1, f"{batch['ref_win_per_token_logp'].size(1)} >= {win_input_ids.size(1) - 1}, {self.tokenizer.batch_decode(win_input_ids)}"
-        assert batch['ref_rej_per_token_logp'].size(1) >= rej_input_ids.size(
-            1) - 1, f"{batch['ref_rej_per_token_logp'].size(1)} >= {rej_input_ids.size(1) - 1}"
+        assert (
+            batch["ref_win_per_token_logp"].size(1) >= win_input_ids.size(1) - 1
+        ), f"{batch['ref_win_per_token_logp'].size(1)} >= {win_input_ids.size(1) - 1}, {self.tokenizer.batch_decode(win_input_ids)}"
+        assert (
+            batch["ref_rej_per_token_logp"].size(1) >= rej_input_ids.size(1) - 1
+        ), f"{batch['ref_rej_per_token_logp'].size(1)} >= {rej_input_ids.size(1) - 1}"
 
         # length of logp is one-token shorter since the last token's output is not used
-        batch['ref_win_per_token_logp'] = batch['ref_win_per_token_logp'][:,
-                                                                          :win_input_ids.size(1) - 1]
-        batch['ref_rej_per_token_logp'] = batch['ref_rej_per_token_logp'][:,
-                                                                          :rej_input_ids.size(1) - 1]
+        batch["ref_win_per_token_logp"] = batch["ref_win_per_token_logp"][
+            :, : win_input_ids.size(1) - 1
+        ]
+        batch["ref_rej_per_token_logp"] = batch["ref_rej_per_token_logp"][
+            :, : rej_input_ids.size(1) - 1
+        ]
         for ins in win_instances:
-            assert len(ins['input_ids']) == len(ins['labels'])
+            assert len(ins["input_ids"]) == len(ins["labels"])
         for ins in rej_instances:
-            assert len(ins['input_ids']) == len(ins['labels'])
+            assert len(ins["input_ids"]) == len(ins["labels"])
         return batch
+
 
 def data_collator(examples, padding_value=0, max_length=2048):
     ### ===> TODO: 将多个样本整理为一个批次
     def trim_and_pad(seq, batch_first, padding_value):
         ## 1. 截取并保留 max_length 以内的文本
         ## 2. 对保留文本进行填充（padding），可以使用 pytorch 库函数
-        return 0
+        seq = [sq[:max_length] for sq in seq]
+        return pad_sequence(seq, batch_first=batch_first, padding_value=padding_value)
 
-    input_ids = None
-    position_ids = None
-    targets = None
-    attention_mask = None
-    image_bound = None
-    tgt_sizes = None
-    pixel_values = None
+    input_ids_list = [example["input_ids"] for example in examples]
+    labels_list = [example["labels"] for example in examples]
+    position_ids_list = [example["position_ids"] for example in examples]
+    input_ids = trim_and_pad(
+        input_ids_list, batch_first=True, padding_value=padding_value
+    )
+    targets = trim_and_pad(labels_list, batch_first=True, padding_value=padding_value)
+    position_ids = trim_and_pad(
+        position_ids_list, batch_first=True, padding_value=padding_value
+    )
+
+    pixel_values = [
+        example["pixel_values"]
+        for example in examples
+        if example.get("pixel_values") is not None
+    ]
+    image_bound = [
+        example["image_bound"]
+        for example in examples
+        if example.get("image_bound") is not None
+    ]
+    tgt_sizes = [
+        example["ttgt_sizesgt_"]
+        for example in examples
+        if example.get("tgt_sizes") is not None
+    ]
+
+    attention_mask = (input_ids != padding_value).long()
 
     return {
         "input_ids": input_ids,
@@ -94,12 +130,12 @@ def data_collator(examples, padding_value=0, max_length=2048):
     }
     ### <===
 
+
 def preference_collator_fn(instances, pad_token_id=0, max_length=2048):
     def concate_pad(tensorA, tensorB, padding_value):
         out = torch.nn.utils.rnn.pad_sequence(
-            list(tensorA) + list(tensorB),
-            batch_first=True,
-            padding_value=padding_value)
+            list(tensorA) + list(tensorB), batch_first=True, padding_value=padding_value
+        )
         return out
 
     rej_instances, win_instances = list(zip(*instances))
@@ -107,25 +143,24 @@ def preference_collator_fn(instances, pad_token_id=0, max_length=2048):
     win_batch = data_collator(win_instances, pad_token_id, max_length=max_length)
 
     concatenated_input_ids = concate_pad(
-        win_batch['input_ids'], rej_batch['input_ids'], pad_token_id)
-    concatenated_labels = concate_pad(
-        win_batch['labels'], rej_batch['labels'], -100)
+        win_batch["input_ids"], rej_batch["input_ids"], pad_token_id
+    )
+    concatenated_labels = concate_pad(win_batch["labels"], rej_batch["labels"], -100)
     concatenated_position_ids = concate_pad(
-        win_batch['position_ids'], rej_batch['position_ids'], pad_token_id)
+        win_batch["position_ids"], rej_batch["position_ids"], pad_token_id
+    )
 
     batch = dict(
         concatenated_input_ids=concatenated_input_ids,
         concatenated_labels=concatenated_labels,
-        win_input_ids=win_batch['input_ids'],
-        rej_input_ids=rej_batch['input_ids'],
-        win_labels=win_batch['labels'],
-        rej_labels=rej_batch['labels'],
-
+        win_input_ids=win_batch["input_ids"],
+        rej_input_ids=rej_batch["input_ids"],
+        win_labels=win_batch["labels"],
+        rej_labels=rej_batch["labels"],
         concatenated_position_ids=concatenated_position_ids,
-
-        images=win_batch['pixel_values'] + win_batch['pixel_values'],
-        image_bound=win_batch['image_bound'] + win_batch['image_bound'],
-        tgt_sizes=win_batch['tgt_sizes'] + rej_batch['tgt_sizes']
+        images=win_batch["pixel_values"] + win_batch["pixel_values"],
+        image_bound=win_batch["image_bound"] + win_batch["image_bound"],
+        tgt_sizes=win_batch["tgt_sizes"] + rej_batch["tgt_sizes"],
     )
 
     # print("batch['images']:", len(batch['images']), len(batch['images'][0]))
@@ -134,6 +169,7 @@ def preference_collator_fn(instances, pad_token_id=0, max_length=2048):
 
     return batch
 
+
 def conversation_to_ids(conversation, tokenizer, max_length=2048):
     """
     for single image multi-turn conversation
@@ -141,16 +177,16 @@ def conversation_to_ids(conversation, tokenizer, max_length=2048):
                    {'role': 'assistant', 'content': 'This is a cat.'}]
     """
 
-    input_ids, context, raw_msg = llm_conversation_to_ids(
-        conversation, tokenizer
-    )
+    input_ids, context, raw_msg = llm_conversation_to_ids(conversation, tokenizer)
 
     ids = torch.from_numpy(np.hstack(input_ids, dtype=np.int32))
     context = torch.from_numpy(np.hstack(context, dtype=np.int8))
     if input_ids.shape[-1] > max_length:
-        ids =ids[:max_length]
+        ids = ids[:max_length]
         context = context[:max_length]
-        logger.warning(f"The input length ({input_ids.shape[-1]}) exceeds the model's maximum length ({max_length}), so it has been truncated")
+        logger.warning(
+            f"The input length ({input_ids.shape[-1]}) exceeds the model's maximum length ({max_length}), so it has been truncated"
+        )
 
     if torch.all(context):
         logger.error("No tokens available to compute loss.")
@@ -165,8 +201,9 @@ def conversation_to_ids(conversation, tokenizer, max_length=2048):
         "target": target,
         "image_bound": image_bound,
         "raw_msg": raw_msg,
-        "position_ids": position_ids
+        "position_ids": position_ids,
     }
+
 
 def llm_conversation_to_ids(conversation, tokenizer):
     raw_msg = ""
@@ -180,35 +217,44 @@ def llm_conversation_to_ids(conversation, tokenizer):
             prefix = "user"
         else:
             prefix = "assistant"
-        chat.append({"role":prefix, "content":message})
+        chat.append({"role": prefix, "content": message})
         raw_msg += prefix + message
-    assert set([i['role'] for i in chat]) & set(['assistant'])
+    assert set([i["role"] for i in chat]) & set(["assistant"])
 
-    ret = tokenizer.apply_chat_template(chat, tokenize=False, add_generation_prompt=False)
-    input_ids = tokenizer.apply_chat_template(chat, tokenize=True, add_generation_prompt=False)
+    ret = tokenizer.apply_chat_template(
+        chat, tokenize=False, add_generation_prompt=False
+    )
+    input_ids = tokenizer.apply_chat_template(
+        chat, tokenize=True, add_generation_prompt=False
+    )
     input_ids = np.array(input_ids[:-1])
 
-    start_idxs = np.where(input_ids == tokenizer.convert_tokens_to_ids('<|im_start|>'))[0]
-    assistant_idxs = np.where(input_ids == tokenizer.convert_tokens_to_ids('assistant'))[0]
-    end_idxs = np.where(input_ids == tokenizer.convert_tokens_to_ids('<|im_end|>'))[0]
+    start_idxs = np.where(input_ids == tokenizer.convert_tokens_to_ids("<|im_start|>"))[
+        0
+    ]
+    assistant_idxs = np.where(
+        input_ids == tokenizer.convert_tokens_to_ids("assistant")
+    )[0]
+    end_idxs = np.where(input_ids == tokenizer.convert_tokens_to_ids("<|im_end|>"))[0]
 
     context = np.ones_like(input_ids, dtype=np.int8)
 
     for assistant_idx in assistant_idxs:
-        if assistant_idx-1 in set(start_idxs):
+        if assistant_idx - 1 in set(start_idxs):
             st = assistant_idx + 1
             for end_idx in end_idxs:
                 if end_idx > st:
-                    context[st: end_idx + 1] = 0
+                    context[st : end_idx + 1] = 0
                     break
 
     input_ids = np.hstack(input_ids)
     context = np.hstack(context)
     return input_ids, context, raw_msg
 
+
 def build_conversation_ids_target(ids, context, tokenizer):
     # build target
-    target = torch.full_like(ids, -100, dtype=torch.int64) # dtype=torch.int32
+    target = torch.full_like(ids, -100, dtype=torch.int64)  # dtype=torch.int32
 
     for i in range(1, len(ids)):
         if context[i] == 0:
@@ -219,6 +265,7 @@ def build_conversation_ids_target(ids, context, tokenizer):
             else:
                 target[i - 1] = tokenizer.eos_id
     return target
+
 
 def build_conversation_ids_image_bound(ids, tokenizer):
     # build image bound
@@ -269,7 +316,15 @@ def preprocess(
     )
 
     use_image_id = True
-    image_placeholder_dict, images, image_placeholder = preprocess_image(images_dict, tokenizer, transform, query_nums, slice_config, default_image_placeholder, use_image_id)
+    image_placeholder_dict, images, image_placeholder = preprocess_image(
+        images_dict,
+        tokenizer,
+        transform,
+        query_nums,
+        slice_config,
+        default_image_placeholder,
+        use_image_id,
+    )
 
     if len(images_dict) == 1 and "<image>" in images_dict:
         if "<image>" in conversations[0]["content"]:
@@ -282,11 +337,11 @@ def preprocess(
             )
         input_dict = conversation_to_ids(conversations, tokenizer, max_length)
     else:
-        pattern = r'<image_\d+>'
+        pattern = r"<image_\d+>"
         new_conversations = []
         for conversation in conversations:
-            content = conversation['content']
-            parts = re.split(f'({pattern})', content)
+            content = conversation["content"]
+            parts = re.split(f"({pattern})", content)
             for i, part in enumerate(parts):
                 if not part.strip():
                     continue
@@ -295,7 +350,7 @@ def preprocess(
                         parts[i] = image_placeholder_dict[part]
                     else:
                         raise Exception(f"not found {part} in image dict")
-            conversation['content'] = '\n'.join(parts)
+            conversation["content"] = "\n".join(parts)
             new_conversations.append(conversation)
         conversations = new_conversations
 
@@ -321,7 +376,16 @@ def preprocess(
 
     return input_dict
 
-def preprocess_image(images_dict, tokenizer, transform, query_nums, slice_config, default_image_placeholder, use_image_id):
+
+def preprocess_image(
+    images_dict,
+    tokenizer,
+    transform,
+    query_nums,
+    slice_config,
+    default_image_placeholder,
+    use_image_id,
+):
     image_placeholder_dict = {}
     images = []
     image_id_cnt = 0
@@ -340,15 +404,22 @@ def preprocess_image(images_dict, tokenizer, transform, query_nums, slice_config
                     for j in range(len(patches[0])):
                         images.append(patches[i][j])
                 if use_image_id:
-                    image_placeholder = f'{tokenizer.im_id_start}{image_id_cnt}{tokenizer.im_id_end}' + image_placeholder
+                    image_placeholder = (
+                        f"{tokenizer.im_id_start}{image_id_cnt}{tokenizer.im_id_end}"
+                        + image_placeholder
+                    )
                     image_id_cnt += 1
                 image_placeholder += get_grid_placeholder(
-                    tokenizer, best_grid, query_nums)
+                    tokenizer, best_grid, query_nums
+                )
             image_placeholder_dict[img_name] = image_placeholder
         else:
             images.append(image)
             if use_image_id:
-                image_placeholder = f'{tokenizer.im_id_start}{image_id_cnt}{tokenizer.im_id_end}' + image_placeholder
+                image_placeholder = (
+                    f"{tokenizer.im_id_start}{image_id_cnt}{tokenizer.im_id_end}"
+                    + image_placeholder
+                )
                 image_id_cnt += 1
             else:
                 image_placeholder = default_image_placeholder
@@ -364,8 +435,7 @@ def slice_image(
     original_size = image.size
     original_width, original_height = original_size
     log_ratio = math.log(original_width / original_height)
-    ratio = original_width * original_height / \
-        (scale_resolution * scale_resolution)
+    ratio = original_width * original_height / (scale_resolution * scale_resolution)
     multiple = min(math.ceil(ratio), max_slice_nums)
 
     source_image = None
@@ -386,8 +456,7 @@ def slice_image(
             candidate_split_grids_nums.append(i)
 
         # source image, down-sampling and ensure divided by patch_size
-        best_resize = find_best_resize(
-            original_size, scale_resolution, patch_size)
+        best_resize = find_best_resize(original_size, scale_resolution, patch_size)
         source_image = image.copy().resize(best_resize, Image.Resampling.BICUBIC)
         candidate_grids = []
 
@@ -487,7 +556,7 @@ def get_grid_placeholder(tokenizer, grid, query_num):
             lines.append(image_placeholder)
         slices.append("".join(lines))
 
-    slice_placeholder = '\n'.join(slices)
+    slice_placeholder = "\n".join(slices)
     return slice_placeholder
 
 
@@ -502,18 +571,18 @@ def reshape_by_patch(image_tensor, patch_size):
     )
 
     patches = patches.reshape(image_tensor.size(0), patch_size, patch_size, -1)
-    patches = patches.permute(0, 1, 3, 2).reshape(
-        image_tensor.size(0), patch_size, -1)
+    patches = patches.permute(0, 1, 3, 2).reshape(image_tensor.size(0), patch_size, -1)
     return patches
 
+
 def build_transform():
-    IMAGENET_INCEPTION_MEAN = (0.5, 0.5, 0.5) # timm.data.IMAGENET_INCEPTION_MEAN
+    IMAGENET_INCEPTION_MEAN = (0.5, 0.5, 0.5)  # timm.data.IMAGENET_INCEPTION_MEAN
     IMAGENET_INCEPTION_STD = (0.5, 0.5, 0.5)  # timm.data.IMAGENET_INCEPTION_STD
     return transforms.Compose(
-            [
-                transforms.ToTensor(),
-                transforms.Normalize(
-                    mean=IMAGENET_INCEPTION_MEAN, std=IMAGENET_INCEPTION_STD
-                ),
-            ]
-        )
+        [
+            transforms.ToTensor(),
+            transforms.Normalize(
+                mean=IMAGENET_INCEPTION_MEAN, std=IMAGENET_INCEPTION_STD
+            ),
+        ]
+    )

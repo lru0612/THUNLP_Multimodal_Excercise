@@ -1,3 +1,9 @@
+# my
+data/VG
+MLLM_Excercise_Model
+data/*
+preference_train.json
+chair_300.pkl
 # Python
 __pycache__
 *.pyc

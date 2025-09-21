@@ -20,7 +20,6 @@ from mllm.train.preprocess import find_best_resize
 logger = logging.getLogger(__name__)
 
 
-
 class GroundingSupervisedDataset(Dataset):
     """Dataset for supervised fine-tuning."""
 
@@ -41,7 +40,7 @@ class GroundingSupervisedDataset(Dataset):
         self.transform = transform
         self.slice_config = slice_config
         self.patch_size = patch_size
-        self.query_nums=query_nums
+        self.query_nums = query_nums
         self.batch_vision = batch_vision
         self.max_length = max_length
 
@@ -50,5 +49,35 @@ class GroundingSupervisedDataset(Dataset):
 
     def __getitem__(self, i) -> Dict[str, torch.Tensor]:
         ### ==> TODO: Visual Grounding数据处理流程
-        pass
+        item = self.raw_data[i]
+        image_path = item["image"]
+        conversations = item["conversations"]
+
+        try:
+            images_dict = {"<image>": Image.open(image_path).convert("RGB")}
+        except Exception as e:
+            logging.error(f"Error loading image {image_path}: {e}")
+            raise e
+
+        data_dict = preprocess(
+            images_dict=images_dict,
+            conversations=conversations,
+            tokenizer=self.tokenizer,
+            transform=self.transform,
+            query_nums=self.query_nums,
+            slice_config=self.slice_config,
+            patch_size=self.patch_size,
+            batch_vision=self.batch_vision,
+            max_length=self.max_length,
+        )
+
+        return dict(
+            input_ids=data_dict["input_ids"],
+            position_ids=data_dict["position_ids"],
+            labels=data_dict["target"],
+            attention_mask=torch.ones_like(data_dict["input_ids"], dtype=torch.bool),
+            pixel_values=data_dict.get("pixel_values", None),
+            tgt_sizes=data_dict.get("tgt_sizes", None),
+            image_bound=data_dict["image_bound"],
+        )
         ### <===

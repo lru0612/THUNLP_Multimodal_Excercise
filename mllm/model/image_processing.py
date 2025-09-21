@@ -8,7 +8,12 @@ import numpy as np
 import PIL
 from PIL import Image
 
-from transformers.utils import TensorType, requires_backends, is_torch_dtype, is_torch_device
+from transformers.utils import (
+    TensorType,
+    requires_backends,
+    is_torch_dtype,
+    is_torch_device,
+)
 from transformers.image_processing_utils import BaseImageProcessor, BatchFeature
 from transformers import AutoImageProcessor
 from transformers.image_transforms import to_channel_dimension_format
@@ -20,7 +25,7 @@ from transformers.image_utils import (
     is_batched,
     to_numpy_array,
     infer_channel_dimension_format,
-    ChannelDimension
+    ChannelDimension,
 )
 
 
@@ -38,7 +43,12 @@ class ModelBatchFeature(BatchFeature):
     r"""
     Extend from BatchFeature for supporting various image size
     """
-    def __init__(self, data: Optional[Dict[str, Any]] = None, tensor_type: Union[None, str, TensorType] = None):
+
+    def __init__(
+        self,
+        data: Optional[Dict[str, Any]] = None,
+        tensor_type: Union[None, str, TensorType] = None,
+    ):
         super().__init__(data)
         self.convert_to_tensors(tensor_type=tensor_type)
 
@@ -55,12 +65,13 @@ class ModelBatchFeature(BatchFeature):
                     return tensor
             except:  # noqa E722
                 if key == "overflowing_values":
-                    raise ValueError("Unable to create tensor returning overflowing values of different lengths. ")
+                    raise ValueError(
+                        "Unable to create tensor returning overflowing values of different lengths. "
+                    )
                 raise ValueError(
                     "Unable to create tensor, you should probably activate padding "
                     "with 'padding=True' to have batched tensors with the same length."
                 )
-
 
         for key, value in self.items():
             self[key] = recursive_converter(converter, value)
@@ -93,7 +104,9 @@ class ModelBatchFeature(BatchFeature):
                 device = arg
             else:
                 # it's something else
-                raise ValueError(f"Attempting to cast a BatchFeature to type {str(arg)}. This is not supported.")
+                raise ValueError(
+                    f"Attempting to cast a BatchFeature to type {str(arg)}. This is not supported."
+                )
         # We cast only floating point tensors to avoid issues with tokenizers casting `LongTensor` to `FloatTensor`
         for k, v in self.items():
             new_data[k] = recursive_converter(cast_tensor, v)
@@ -104,12 +117,7 @@ class ModelBatchFeature(BatchFeature):
 class ModelImageProcessor(BaseImageProcessor):
     model_input_names = ["pixel_values"]
 
-    def __init__(
-            self,
-            max_slice_nums=9,
-            scale_resolution=448,
-            patch_size=14,
-            **kwargs):
+    def __init__(self, max_slice_nums=9, scale_resolution=448, patch_size=14, **kwargs):
         super().__init__(**kwargs)
         self.max_slice_nums = max_slice_nums
         self.scale_resolution = scale_resolution
@@ -131,14 +139,11 @@ class ModelImageProcessor(BaseImageProcessor):
     def ensure_divide(self, length, patch_size):
         return max(round(length / patch_size) * patch_size, patch_size)
 
-    def find_best_resize(self,
-                         original_size,
-                         scale_resolution,
-                         patch_size,
-                         allow_upscale=False):
+    def find_best_resize(
+        self, original_size, scale_resolution, patch_size, allow_upscale=False
+    ):
         width, height = original_size
-        if (width * height >
-                scale_resolution * scale_resolution) or allow_upscale:
+        if (width * height > scale_resolution * scale_resolution) or allow_upscale:
             r = width / height
             height = int(scale_resolution / math.sqrt(r))
             width = int(height * r)
@@ -146,12 +151,9 @@ class ModelImageProcessor(BaseImageProcessor):
         best_height = self.ensure_divide(height, patch_size)
         return (best_width, best_height)
 
-    def get_refine_size(self,
-                        original_size,
-                        grid,
-                        scale_resolution,
-                        patch_size,
-                        allow_upscale=False):
+    def get_refine_size(
+        self, original_size, grid, scale_resolution, patch_size, allow_upscale=False
+    ):
         width, height = original_size
         grid_x, grid_y = grid
 
@@ -161,10 +163,12 @@ class ModelImageProcessor(BaseImageProcessor):
         grid_width = refine_width / grid_x
         grid_height = refine_height / grid_y
 
-        best_grid_size = self.find_best_resize((grid_width, grid_height),
-                                               scale_resolution,
-                                               patch_size,
-                                               allow_upscale=allow_upscale)
+        best_grid_size = self.find_best_resize(
+            (grid_width, grid_height),
+            scale_resolution,
+            patch_size,
+            allow_upscale=allow_upscale,
+        )
         refine_size = (best_grid_size[0] * grid_x, best_grid_size[1] * grid_y)
         return refine_size
 
@@ -183,7 +187,12 @@ class ModelImageProcessor(BaseImageProcessor):
         return patches
 
     def slice_image(
-        self, image, max_slice_nums=9, scale_resolution=448, patch_size=14, never_split=False
+        self,
+        image,
+        max_slice_nums=9,
+        scale_resolution=448,
+        patch_size=14,
+        never_split=False,
     ):
         original_size = image.size
         source_image = None
@@ -198,10 +207,18 @@ class ModelImageProcessor(BaseImageProcessor):
             source_image = image.resize(best_size, resample=Image.Resampling.BICUBIC)
         else:
             # source image, down-sampling and ensure divided by patch_size
-            best_resize = self.find_best_resize(original_size, scale_resolution, patch_size)
-            source_image = image.copy().resize(best_resize, resample=Image.Resampling.BICUBIC)
+            best_resize = self.find_best_resize(
+                original_size, scale_resolution, patch_size
+            )
+            source_image = image.copy().resize(
+                best_resize, resample=Image.Resampling.BICUBIC
+            )
             refine_size = self.get_refine_size(
-                original_size, best_grid, scale_resolution, patch_size, allow_upscale=True
+                original_size,
+                best_grid,
+                scale_resolution,
+                patch_size,
+                allow_upscale=True,
             )
             refine_image = image.resize(refine_size, resample=Image.Resampling.BICUBIC)
             patches = self.split_to_patches(refine_image, best_grid)
@@ -238,13 +255,15 @@ class ModelImageProcessor(BaseImageProcessor):
         if not self.slice_mode:
             return [image]
 
-        max_slice_nums = self.max_slice_nums if max_slice_nums is None else int(max_slice_nums)
+        max_slice_nums = (
+            self.max_slice_nums if max_slice_nums is None else int(max_slice_nums)
+        )
         assert max_slice_nums > 0
         source_image, patches, sliced_grid = self.slice_image(
             image,
             max_slice_nums,  # default: 9
             self.scale_resolution,  # default: 448
-            self.patch_size  # default: 14
+            self.patch_size,  # default: 14
         )
 
         slice_images.append(source_image)
@@ -257,7 +276,11 @@ class ModelImageProcessor(BaseImageProcessor):
     def get_sliced_grid(self, image_size, max_slice_nums, nerver_split=False):
         original_width, original_height = image_size
         log_ratio = math.log(original_width / original_height)
-        ratio = original_width * original_height / (self.scale_resolution * self.scale_resolution)
+        ratio = (
+            original_width
+            * original_height
+            / (self.scale_resolution * self.scale_resolution)
+        )
         multiple = min(math.ceil(ratio), max_slice_nums)
         if multiple <= 1 or nerver_split:
             return None
@@ -285,10 +308,16 @@ class ModelImageProcessor(BaseImageProcessor):
 
         return best_grid
 
-    def get_slice_image_placeholder(self, image_size, image_idx=0, max_slice_nums=None, use_image_id=None):
-        max_slice_nums = self.max_slice_nums if max_slice_nums is None else int(max_slice_nums)
+    def get_slice_image_placeholder(
+        self, image_size, image_idx=0, max_slice_nums=None, use_image_id=None
+    ):
+        max_slice_nums = (
+            self.max_slice_nums if max_slice_nums is None else int(max_slice_nums)
+        )
         assert max_slice_nums > 0
-        grid = self.get_sliced_grid(image_size=image_size, max_slice_nums=max_slice_nums)
+        grid = self.get_sliced_grid(
+            image_size=image_size, max_slice_nums=max_slice_nums
+        )
 
         image_placeholder = (
             self.im_start_token
@@ -297,7 +326,9 @@ class ModelImageProcessor(BaseImageProcessor):
         )
         use_image_id = self.use_image_id if use_image_id is None else bool(use_image_id)
         if use_image_id:
-            final_placeholder = self.get_image_id_placeholder(image_idx) + image_placeholder
+            final_placeholder = (
+                self.get_image_id_placeholder(image_idx) + image_placeholder
+            )
         else:
             final_placeholder = image_placeholder
 
@@ -344,9 +375,7 @@ class ModelImageProcessor(BaseImageProcessor):
         image = torch.from_numpy(image)
         patch_size = self.patch_size
         patches = torch.nn.functional.unfold(
-            image,
-            (patch_size, patch_size),
-            stride=(patch_size, patch_size)
+            image, (patch_size, patch_size), stride=(patch_size, patch_size)
         )
 
         patches = patches.reshape(image.size(0), patch_size, patch_size, -1)
@@ -354,13 +383,13 @@ class ModelImageProcessor(BaseImageProcessor):
         return patches.numpy()
 
     def preprocess(
-            self,
-            images: Union[Image.Image, List[Image.Image], List[List[Image.Image]]],
-            do_pad: Optional[bool] = True,
-            max_slice_nums: int = None,
-            return_tensors: Optional[Union[str, TensorType]] = None,
-            **kwargs
-        ) -> ModelBatchFeature:
+        self,
+        images: Union[Image.Image, List[Image.Image], List[List[Image.Image]]],
+        do_pad: Optional[bool] = True,
+        max_slice_nums: int = None,
+        return_tensors: Optional[Union[str, TensorType]] = None,
+        **kwargs,
+    ) -> ModelBatchFeature:
         if isinstance(images, Image.Image):
             images_list = [[images]]
         elif isinstance(images[0], Image.Image):
@@ -392,18 +421,37 @@ class ModelImageProcessor(BaseImageProcessor):
             tgt_sizes = []
             for image in _images:
                 image_patches = self.get_sliced_images(image, max_slice_nums)
-                image_patches = [to_numpy_array(image).astype(np.float32) / 255 for image in image_patches]
                 image_patches = [
-                    self.normalize(image=image, mean=self.mean, std=self.std, input_data_format=input_data_format)
-                        for image in image_patches
+                    to_numpy_array(image).astype(np.float32) / 255
+                    for image in image_patches
                 ]
                 image_patches = [
-                    to_channel_dimension_format(image, ChannelDimension.FIRST, input_channel_dim=input_data_format)
-                        for image in image_patches
+                    self.normalize(
+                        image=image,
+                        mean=self.mean,
+                        std=self.std,
+                        input_data_format=input_data_format,
+                    )
+                    for image in image_patches
+                ]
+                image_patches = [
+                    to_channel_dimension_format(
+                        image,
+                        ChannelDimension.FIRST,
+                        input_channel_dim=input_data_format,
+                    )
+                    for image in image_patches
                 ]
                 for slice_image in image_patches:
                     new_images.append(self.reshape_by_patch(slice_image))
-                    tgt_sizes.append(np.array((slice_image.shape[1] // self.patch_size, slice_image.shape[2] // self.patch_size)))
+                    tgt_sizes.append(
+                        np.array(
+                            (
+                                slice_image.shape[1] // self.patch_size,
+                                slice_image.shape[2] // self.patch_size,
+                            )
+                        )
+                    )
 
             if tgt_sizes:
                 tgt_sizes = np.vstack(tgt_sizes)
@@ -412,7 +460,13 @@ class ModelImageProcessor(BaseImageProcessor):
             image_sizes_list.append(image_sizes)
             tgt_sizes_list.append(tgt_sizes)
         return ModelBatchFeature(
-            data={"pixel_values": new_images_list, "image_sizes": image_sizes_list, "tgt_sizes": tgt_sizes_list}, tensor_type=return_tensors
+            data={
+                "pixel_values": new_images_list,
+                "image_sizes": image_sizes_list,
+                "tgt_sizes": tgt_sizes_list,
+            },
+            tensor_type=return_tensors,
         )
+
 
 AutoImageProcessor.register("ModelImageProcessor", ModelImageProcessor)

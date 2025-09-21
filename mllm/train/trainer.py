@@ -22,15 +22,23 @@ class SFTTrainer(Trainer):
             labels = None
 
         if not self.args.use_lora:
-            outputs = self.model(data = inputs, use_cache=False)
+            outputs = self.model(data=inputs, use_cache=False)
         else:
             with self.model._enable_peft_forward_hooks(**inputs):
-                outputs = self.model.base_model(data = inputs, use_cache=False)
+                outputs = self.model.base_model(data=inputs, use_cache=False)
 
         if labels is not None:
             ### ===> TODO: 实现监督微调损失函数计算
             # 注意检查当前位置的 logits 对应的目标输出是否为下一个token
-            loss = None
+            logits = outputs.get("logits")
+            shift_logits = logits[..., :-1, :].contiguous()
+            shift_labels = labels[..., 1:].contiguous()
+
+            vocab_size = shift_logits.size(-1)
+            shift_logits = shift_logits.view(-1, vocab_size)
+            shift_labels = shift_labels.view(-1)
+
+            loss = F.cross_entropy(shift_logits, shift_labels, reduction="mean")
             ### <===
         else:
             if isinstance(outputs, dict) and "loss" not in outputs:
@@ -99,8 +107,7 @@ class SFTTrainer(Trainer):
 
         # labels may be popped when computing the loss (label smoothing for instance) so we grab them first.
         if has_labels or loss_without_labels:
-            labels = nested_detach(tuple(inputs.get(name)
-                                   for name in self.label_names))
+            labels = nested_detach(tuple(inputs.get(name) for name in self.label_names))
             if len(labels) == 1:
                 labels = labels[0]
         else:
@@ -171,7 +178,9 @@ class SFTTrainer(Trainer):
 
         return (loss, logits, labels)
 
-    def training_step(self, model: nn.Module, inputs: Dict[str, Union[torch.Tensor, Any]]) -> torch.Tensor:
+    def training_step(
+        self, model: nn.Module, inputs: Dict[str, Union[torch.Tensor, Any]]
+    ) -> torch.Tensor:
         """
         Perform a training step on a batch of inputs.
 
@@ -193,7 +202,9 @@ class SFTTrainer(Trainer):
         inputs = self._prepare_inputs(inputs)
 
         if is_sagemaker_mp_enabled():
-            loss_mb = smp_forward_backward(model, inputs, self.args.gradient_accumulation_steps)
+            loss_mb = smp_forward_backward(
+                model, inputs, self.args.gradient_accumulation_steps
+            )
             return loss_mb.reduce_mean().detach().to(self.args.device)
 
         with self.compute_loss_context_manager():
@@ -219,7 +230,11 @@ class SFTTrainer(Trainer):
         os.makedirs(output_dir, exist_ok=True)
         logger.info(f"Saving model checkpoint to {output_dir}")
 
-        supported_classes = (PreTrainedModel,) if not is_peft_available() else (PreTrainedModel, PeftModel)
+        supported_classes = (
+            (PreTrainedModel,)
+            if not is_peft_available()
+            else (PreTrainedModel, PeftModel)
+        )
         # Save a trained model and configuration using `save_pretrained()`.
         # They can then be reloaded using `from_pretrained()`
         if not isinstance(self.model, supported_classes):
@@ -228,20 +243,28 @@ class SFTTrainer(Trainer):
 
             if isinstance(unwrap_model(self.model), supported_classes):
                 unwrap_model(self.model).save_pretrained(
-                    output_dir, state_dict=state_dict, safe_serialization=self.args.save_safetensors
+                    output_dir,
+                    state_dict=state_dict,
+                    safe_serialization=self.args.save_safetensors,
                 )
             else:
-                logger.info("Trainer.model is not a `PreTrainedModel`, only saving its state dict.")
+                logger.info(
+                    "Trainer.model is not a `PreTrainedModel`, only saving its state dict."
+                )
                 if self.args.save_safetensors:
                     safetensors.torch.save_file(
-                        state_dict, os.path.join(output_dir, SAFE_WEIGHTS_NAME), metadata={"format": "pt"}
+                        state_dict,
+                        os.path.join(output_dir, SAFE_WEIGHTS_NAME),
+                        metadata={"format": "pt"},
                     )
                 else:
                     torch.save(state_dict, os.path.join(output_dir, WEIGHTS_NAME))
         else:
 
             self.model.save_pretrained(
-                output_dir, state_dict=state_dict, safe_serialization=self.args.save_safetensors
+                output_dir,
+                state_dict=state_dict,
+                safe_serialization=self.args.save_safetensors,
             )
 
         if self.tokenizer is not None:
@@ -272,64 +295,87 @@ class PreferenceTrainer(Trainer):
         losses = None
         chosen_rewards = None
         rejected_rewards = None
-
+        chosen_rewards = beta * (policy_chosen_logps-reference_chosen_logps)
+        rejected_rewards = beta * (policy_rejected_logps-reference_rejected_logps)
+        losses = -F.logsigmoid(chosen_rewards) -0.5*( F.logsigmoid(-rejected_rewards)+F.logsigmoid(-chosen_rewards))
         return losses, chosen_rewards.detach(), rejected_rewards.detach()
         ### <===
 
-
     def get_beta_and_logps(self, data_dict, model, args):
-        win_input_ids = data_dict.pop('win_input_ids')
-        rej_input_ids = data_dict.pop('rej_input_ids')
+        win_input_ids = data_dict.pop("win_input_ids")
+        rej_input_ids = data_dict.pop("rej_input_ids")
 
-        win_labels = data_dict.pop('win_labels')
-        rej_labels = data_dict.pop('rej_labels')
+        win_labels = data_dict.pop("win_labels")
+        rej_labels = data_dict.pop("rej_labels")
 
         # win_attention_mask = data_dict.pop('win_attention_mask')
         # rej_attention_mask = data_dict.pop('rej_attention_mask')
 
-        ref_win_avg_logp = data_dict.pop('ref_win_avg_logp')
-        ref_rej_avg_logp = data_dict.pop('ref_rej_avg_logp')
-        ref_win_logp = data_dict.pop('ref_win_logp')
-        ref_rej_logp = data_dict.pop('ref_rej_logp')
-        ref_win_per_token_logp = data_dict.pop('ref_win_per_token_logp')
-        ref_rej_per_token_logp = data_dict.pop('ref_rej_per_token_logp')
+        ref_win_avg_logp = data_dict.pop("ref_win_avg_logp")
+        ref_rej_avg_logp = data_dict.pop("ref_rej_avg_logp")
+        ref_win_logp = data_dict.pop("ref_win_logp")
+        ref_rej_logp = data_dict.pop("ref_rej_logp")
+        ref_win_per_token_logp = data_dict.pop("ref_win_per_token_logp")
+        ref_rej_per_token_logp = data_dict.pop("ref_rej_per_token_logp")
 
         if args.preference_use_average_logp:
             ref_win_logp = ref_win_avg_logp
             ref_rej_logp = ref_rej_avg_logp
 
-        beta = data_dict.pop('beta')
-        images = data_dict.pop('images')
+        beta = data_dict.pop("beta")
+        images = data_dict.pop("images")
         # print(data_dict.keys())
-        if 'win_context_ids' in data_dict.keys():
-            data_dict.pop('win_context_ids')
-            data_dict.pop('rej_context_ids')
+        if "win_context_ids" in data_dict.keys():
+            data_dict.pop("win_context_ids")
+            data_dict.pop("rej_context_ids")
         concatenated_images = images
 
         # print("forward input keys:", data_dict.keys())
         # print("concatenated_images:", len(concatenated_images), len(concatenated_images[0]))
 
-        concatenated_input_ids = data_dict.pop('concatenated_input_ids')
-        concatenated_labels = data_dict.pop('concatenated_labels')
-        concatenated_attention_mask = data_dict.pop('concatenated_attention_mask')
+        concatenated_input_ids = data_dict.pop("concatenated_input_ids")
+        concatenated_labels = data_dict.pop("concatenated_labels")
+        concatenated_attention_mask = data_dict.pop("concatenated_attention_mask")
 
         data = {
             "input_ids": concatenated_input_ids,
-            "image_bound": data_dict['image_bound'],
+            "image_bound": data_dict["image_bound"],
             "pixel_values": concatenated_images,
-            "tgt_sizes": data_dict['tgt_sizes'],
-            "position_ids": data_dict['concatenated_position_ids'],
-            "attention_mask": concatenated_attention_mask
+            "tgt_sizes": data_dict["tgt_sizes"],
+            "position_ids": data_dict["concatenated_position_ids"],
+            "attention_mask": concatenated_attention_mask,
         }
 
         ### ===> TODO: 计算训练过程中，模型在正、负样本上的 logp
         # 注意：我们在数据处理中获取了正负样本拼接后的输入信息，需要将拼接后的输出结果还原
-        policy_win_logp, policy_rej_logp = None, None
+        
+        if not self.args.use_lora:
+            outputs = self.model(data=data, use_cache=False)
+        else:
+            with self.model._enable_peft_forward_hooks(**data):
+                outputs = self.model.base_model(data=data, use_cache=False)
+
+        all_logits = outputs.logits
+        
+
+        batch_size = win_input_ids.size(0)
+        
+        chosen_logits = all_logits[:batch_size]
+        rejected_logits = all_logits[batch_size:]
+        
+        chosen_labels = concatenated_labels[:batch_size]
+        rejected_labels = concatenated_labels[batch_size:]
+
+        policy_win_logp = get_batch_logps(
+            chosen_logits, chosen_labels, self.tokenizer,return_per_token_logp=True
+        )
+        policy_rej_logp = get_batch_logps(
+            rejected_logits, rejected_labels, self.tokenizer,return_per_token_logp=True
+        )
         ### <===
 
         # print("trainer: ref_win_logp:", ref_win_logp.dtype, ref_win_logp.item())
         return policy_win_logp, policy_rej_logp, ref_win_logp, ref_rej_logp, beta
-
 
     def compute_loss(self, model: Module, inputs: dict, return_outputs=False):
         if self.args.past_index >= 0:
@@ -340,9 +386,9 @@ class PreferenceTrainer(Trainer):
 
         data_dict = inputs
 
-        policy_win_logp, policy_rej_logp, ref_win_logp, ref_rej_logp, beta = self.get_beta_and_logps(
-            data_dict, model, self.args)
-
+        policy_win_logp, policy_rej_logp, ref_win_logp, ref_rej_logp, beta = (
+            self.get_beta_and_logps(data_dict, model, self.args)
+        )
 
         losses, chosen_rewards, rejected_rewards = self.preference_loss(
             beta, policy_win_logp, policy_rej_logp, ref_win_logp, ref_rej_logp
@@ -351,18 +397,18 @@ class PreferenceTrainer(Trainer):
 
         loss = losses.mean()
 
-        t = 'train' if model.training else 'test'
+        t = "train" if model.training else "test"
         metrics = {}
-        metrics[f'rewards_{t}/chosen'] = gather_and_do_mean(chosen_rewards)
-        metrics[f'rewards_{t}/rejected'] = gather_and_do_mean(rejected_rewards)
-        metrics[f'logps_{t}/rejected'] = gather_and_do_mean(policy_rej_logp)
-        metrics[f'logps_{t}/chosen'] = gather_and_do_mean(policy_win_logp)
-        metrics[f'logps_{t}/ref_rejected'] = gather_and_do_mean(ref_rej_logp)
-        metrics[f'logps_{t}/ref_chosen'] = gather_and_do_mean(ref_win_logp)
-        metrics[f'rewards_{t}/accuracies'] = gather_and_do_mean(
-            reward_accuracies)
-        metrics[f'rewards_{t}/margins'] = metrics[f'rewards_{t}/chosen'] - \
-            metrics[f'rewards_{t}/rejected']
+        metrics[f"rewards_{t}/chosen"] = gather_and_do_mean(chosen_rewards)
+        metrics[f"rewards_{t}/rejected"] = gather_and_do_mean(rejected_rewards)
+        metrics[f"logps_{t}/rejected"] = gather_and_do_mean(policy_rej_logp)
+        metrics[f"logps_{t}/chosen"] = gather_and_do_mean(policy_win_logp)
+        metrics[f"logps_{t}/ref_rejected"] = gather_and_do_mean(ref_rej_logp)
+        metrics[f"logps_{t}/ref_chosen"] = gather_and_do_mean(ref_win_logp)
+        metrics[f"rewards_{t}/accuracies"] = gather_and_do_mean(reward_accuracies)
+        metrics[f"rewards_{t}/margins"] = (
+            metrics[f"rewards_{t}/chosen"] - metrics[f"rewards_{t}/rejected"]
+        )
 
         self.log(metrics)
 

@@ -1,5 +1,5 @@
-import io
 import os
+import io
 import copy
 import json
 import base64
@@ -14,6 +14,7 @@ from mllm.model import MLLMModel
 from mllm.model.processing import ModelProcessor
 from mllm.model.image_processing import ModelImageProcessor
 from utils.file_io import read_jsonlines, read_json
+
 
 class MLLMEvalModel(MLLMModel):
     def __init__(self, config):
@@ -30,7 +31,7 @@ class MLLMEvalModel(MLLMModel):
         min_new_tokens=0,
         sampling=True,
         max_inp_length=8192,
-        system_prompt='',
+        system_prompt="",
         stream=False,
         max_slice_nums=None,
         use_image_id=None,
@@ -46,19 +47,36 @@ class MLLMEvalModel(MLLMModel):
         if batched is False:
             images_list, msgs_list = [images_list], [msgs_list]
         else:
-            assert images_list is None, "Please integrate image to msgs when using batch inference."
+            assert (
+                images_list is None
+            ), "Please integrate image to msgs when using batch inference."
             images_list = [None] * len(msgs_list)
-        assert len(images_list) == len(msgs_list), "The batch dim of images_list and msgs_list should be the same."
+        assert len(images_list) == len(
+            msgs_list
+        ), "The batch dim of images_list and msgs_list should be the same."
 
-        assert self.config.query_num == processor.image_processor.image_feature_size, "These two values should be the same. Check `config.json` and `preprocessor_config.json`."
-        assert self.config.patch_size == processor.image_processor.patch_size, "These two values should be the same. Check `config.json` and `preprocessor_config.json`."
-        assert self.config.use_image_id == processor.image_processor.use_image_id, "These two values should be the same. Check `config.json` and `preprocessor_config.json`."
-        assert self.config.slice_config.max_slice_nums == processor.image_processor.max_slice_nums, "These two values should be the same. Check `config.json` and `preprocessor_config.json`."
-        assert self.config.slice_mode == processor.image_processor.slice_mode, "These two values should be the same. Check `config.json` and `preprocessor_config.json`."
+        assert (
+            self.config.query_num == processor.image_processor.image_feature_size
+        ), "These two values should be the same. Check `config.json` and `preprocessor_config.json`."
+        assert (
+            self.config.patch_size == processor.image_processor.patch_size
+        ), "These two values should be the same. Check `config.json` and `preprocessor_config.json`."
+        assert (
+            self.config.use_image_id == processor.image_processor.use_image_id
+        ), "These two values should be the same. Check `config.json` and `preprocessor_config.json`."
+        assert (
+            self.config.slice_config.max_slice_nums
+            == processor.image_processor.max_slice_nums
+        ), "These two values should be the same. Check `config.json` and `preprocessor_config.json`."
+        assert (
+            self.config.slice_mode == processor.image_processor.slice_mode
+        ), "These two values should be the same. Check `config.json` and `preprocessor_config.json`."
 
         assert sampling or not stream, "if use stream mode, make sure sampling=True"
 
-        prompts_lists, input_images_lists = self.prepare_chat_inputs(tokenizer, system_prompt, msgs_list, images_list)
+        prompts_lists, input_images_lists = self.prepare_chat_inputs(
+            tokenizer, system_prompt, msgs_list, images_list
+        )
 
         inputs = processor(
             prompts_lists,
@@ -66,7 +84,7 @@ class MLLMEvalModel(MLLMModel):
             max_slice_nums=max_slice_nums,
             use_image_id=use_image_id,
             return_tensors="pt",
-            max_length=max_inp_length
+            max_length=max_inp_length,
         ).to(self.device)
 
         if sampling:
@@ -75,7 +93,7 @@ class MLLMEvalModel(MLLMModel):
                 "top_k": 100,
                 "temperature": 0.7,
                 "do_sample": True,
-                "repetition_penalty": 1.05
+                "repetition_penalty": 1.05,
             }
         else:
             generation_config = {
@@ -84,7 +102,7 @@ class MLLMEvalModel(MLLMModel):
             }
 
         if min_new_tokens > 0:
-            generation_config['min_new_tokens'] = min_new_tokens
+            generation_config["min_new_tokens"] = min_new_tokens
 
         generation_config.update(
             (k, kwargs[k]) for k in generation_config.keys() & kwargs.keys()
@@ -103,11 +121,13 @@ class MLLMEvalModel(MLLMModel):
             )
 
         if stream:
+
             def stream_gen():
                 for text in res:
                     for term in self.terminators:
-                        text = text.replace(term, '')
+                        text = text.replace(term, "")
                     yield text
+
             return stream_gen()
 
         else:
@@ -127,7 +147,22 @@ class MLLMEvalModel(MLLMModel):
 
         prompts_lists = []
         input_images_lists = []
-
+        for msgs, images in zip(msgs_list, images_list):
+            current_dialog = []
+            current_dialog.append({"role": "system", "content": system_prompt})
+            for msg in msgs:
+                content = msg["content"]
+                if msg["role"] == "user":
+                    content = "<image>./</image>\n" + content
+                current_dialog.append({"role": msg["role"], "content": content})
+            prompt = tokenizer.apply_chat_template(
+                current_dialog,
+                tokenize=True,
+                add_generation_prompt=True,
+                return_tensors="pt",
+            )
+            prompts_lists.append(prompt)
+            input_images_lists.append(images)
         ### <===
 
         return prompts_lists, input_images_lists
@@ -142,7 +177,7 @@ def eval_model(args):
         args.model_name_or_path, trust_remote_code=True
     )
 
-    img_processor_config = read_json('mllm/model/mllm_preprocessor_config.json')
+    img_processor_config = read_json("mllm/model/mllm_preprocessor_config.json")
     image_processor = ModelImageProcessor(**img_processor_config)
     processor = ModelProcessor(image_processor, tokenizer)
 
@@ -150,18 +185,18 @@ def eval_model(args):
 
     input_data = read_jsonlines(args.question_file)
 
-    ans_file = open(args.answers_file, 'w')
+    ans_file = open(args.answers_file, "w")
 
     with torch.inference_mode():
         i = 0
         for item in tqdm(input_data):
-            image = item['image']
-            msgs = [{"role": "user", "content": item['question']}]
+            image = item["image"]
+            msgs = [{"role": "user", "content": item["question"]}]
 
             if len(image) > 1000:
-                image = Image.open(io.BytesIO(base64.b64decode(image))).convert('RGB')
+                image = Image.open(io.BytesIO(base64.b64decode(image))).convert("RGB")
             else:
-                image = Image.open(image).convert('RGB')
+                image = Image.open(image).convert("RGB")
 
             answer = model.chat(
                 image=image,
@@ -169,33 +204,36 @@ def eval_model(args):
                 context=None,
                 tokenizer=tokenizer,
                 sampling=args.sampling,
-                processor=processor
+                processor=processor,
             )
 
             answer_dict = {
                 "idx": i,
-                "question": msgs[0]['content'],
+                "question": msgs[0]["content"],
                 "answer": answer,
                 "model": args.model_name_or_path,
-                "metainfos": {key: value for key, value in item.items() if key not in ['image', 'question']}
+                "metainfos": {
+                    key: value
+                    for key, value in item.items()
+                    if key not in ["image", "question"]
+                },
             }
 
-            if 'image_id' in item.keys():
-                answer_dict['image_id'] = item['image_id']
+            if "image_id" in item.keys():
+                answer_dict["image_id"] = item["image_id"]
 
-            ans_file.write(
-                json.dumps(answer_dict) + '\n'
-            )
+            ans_file.write(json.dumps(answer_dict) + "\n")
             ans_file.flush()
 
             i += 1
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model-name-or-path", type=str)
     parser.add_argument("--question-file", type=str)
     parser.add_argument("--answers-file", type=str)
-    parser.add_argument("--sampling", action='store_true')
+    parser.add_argument("--sampling", action="store_true")
     args = parser.parse_args()
 
     eval_model(args)

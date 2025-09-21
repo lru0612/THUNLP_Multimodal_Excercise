@@ -13,6 +13,7 @@ from model import MLLMModel
 from transformers import AutoTokenizer
 import torch.utils.data as torch_data
 from torch.utils.data import Dataset
+import torch.nn.functional as F
 
 from utils.file_io import read_json, bytes_to_PIL_image, b64_to_PIL_image
 from mllm.train.preprocess import data_collator, build_transform, preprocess
@@ -25,8 +26,9 @@ class InferenceSampler(torch.utils.data.sampler.Sampler):
         assert size > 0
         self._rank = torch.distributed.get_rank()
         self._world_size = torch.distributed.get_world_size()
-        self._local_indices = self._get_local_indices(size, self._world_size,
-                                                      self._rank)
+        self._local_indices = self._get_local_indices(
+            size, self._world_size, self._rank
+        )
 
     @staticmethod
     def _get_local_indices(total_size, world_size, rank):
@@ -35,7 +37,7 @@ class InferenceSampler(torch.utils.data.sampler.Sampler):
         shard_sizes = [shard_size + int(r < left) for r in range(world_size)]
 
         begin = sum(shard_sizes[:rank])
-        end = min(sum(shard_sizes[:rank + 1]), total_size)
+        end = min(sum(shard_sizes[: rank + 1]), total_size)
         return range(begin, end)
 
     def __iter__(self):
@@ -46,14 +48,16 @@ class InferenceSampler(torch.utils.data.sampler.Sampler):
 
 
 class PreferenceInferenceDataset(Dataset):
-    def __init__(self,
-                 data, img_dir,
-                 tokenizer = None,
-                 transform=None,
-                 slice_config=None,
-                 batch_vision=True,
-                 max_length=2048,
-                 ):
+    def __init__(
+        self,
+        data,
+        img_dir,
+        tokenizer=None,
+        transform=None,
+        slice_config=None,
+        batch_vision=True,
+        max_length=2048,
+    ):
 
         self.data = data
         self.img_dir = img_dir
@@ -72,7 +76,7 @@ class PreferenceInferenceDataset(Dataset):
             transform=self.transform,
             slice_config=self.slice_config,
             batch_vision=self.batch_vision,
-            max_length=self.max_length
+            max_length=self.max_length,
         )
 
         model_inputs = dict(
@@ -93,20 +97,24 @@ class PreferenceInferenceDataset(Dataset):
         except:
             sample = self.data.iloc[index]
 
-        question = {'role': 'user', 'content': f"<image>\n{sample['question']}"}
-        chosen = {'role': 'assistant', 'content': sample['chosen']}
-        rejected = {'role': 'assistant', 'content': sample['rejected']}
+        question = {"role": "user", "content": f"<image>\n{sample['question']}"}
+        chosen = {"role": "assistant", "content": sample["chosen"]}
+        rejected = {"role": "assistant", "content": sample["rejected"]}
 
-        if 'image' in sample.keys():
-            images_dict = { "<image>": b64_to_PIL_image(sample['image'])}
-        elif 'image_path' in sample.keys() and isinstance(sample['image_path'], str):
-            images_dict = { "<image>" : Image.open(os.path.join(self.img_dir, sample['image_path'])).convert("RGB") }
+        if "image" in sample.keys():
+            images_dict = {"<image>": b64_to_PIL_image(sample["image"])}
+        elif "image_path" in sample.keys() and isinstance(sample["image_path"], str):
+            images_dict = {
+                "<image>": Image.open(
+                    os.path.join(self.img_dir, sample["image_path"])
+                ).convert("RGB")
+            }
 
         formated_sample = {
-            'image': images_dict,
+            "image": images_dict,
             "chosen": [question, chosen],
             "rejected": [question, rejected],
-            "idx": sample['idx'],
+            "idx": sample["idx"],
         }
 
         return formated_sample
@@ -117,8 +125,12 @@ class PreferenceInferenceDataset(Dataset):
         # return formated_sample
 
         sample = {
-            "chosen": self.preprocess_input(formated_sample['image'], formated_sample['chosen']),
-            "rejected": self.preprocess_input(formated_sample['image'], formated_sample['rejected'])
+            "chosen": self.preprocess_input(
+                formated_sample["image"], formated_sample["chosen"]
+            ),
+            "rejected": self.preprocess_input(
+                formated_sample["image"], formated_sample["rejected"]
+            ),
         }
 
         return sample
@@ -127,7 +139,13 @@ class PreferenceInferenceDataset(Dataset):
         return len(self.data)
 
 
-def get_batch_logps(logits: torch.FloatTensor, labels: torch.LongTensor, tokenizer, return_per_token_logp=False, return_all=False) -> torch.FloatTensor:
+def get_batch_logps(
+    logits: torch.FloatTensor,
+    labels: torch.LongTensor,
+    tokenizer,
+    return_per_token_logp=False,
+    return_all=False,
+) -> torch.FloatTensor:
     """Compute the log probabilities of the given labels under the given logits.
 
     Args:
@@ -142,13 +160,31 @@ def get_batch_logps(logits: torch.FloatTensor, labels: torch.LongTensor, tokeniz
     # average_log_prob: 完整回复中每个词 logp 的平均值
     ## 注意：
     ## 计算时注意logits与label对应关系是否正确，当前位置logits应该以后一个词为目标
-    ## 只有输出部分应该被计算再内
+    ## 只有输出部分应该被计算在内
     per_token_logps = None
     log_prob = None
     average_log_prob = None
+    shift_logits = logits[..., :-1, :].contiguous()
+    shift_labels = labels[..., 1:].contiguous()#(batch_size, sequence_length-1)
+
+    valid_mask=(shift_labels!=-100)
+    batch_size = shift_logits.size(0)
+    vocab_size = shift_logits.size(-1)
+    shift_logits = shift_logits.view(-1, vocab_size)
+    log_probs = F.log_softmax(shift_logits, dim=-1) # (batch_size*sequence_length, vocab_size)
+    shift_labels = shift_labels.view(-1)#(batch_size*sequence_length,)
+
+    per_token_logps = torch.gather(log_probs, dim=1, index=shift_labels.unsqueeze(1)).squeeze(1).view(batch_size, -1)
+    per_token_logps = per_token_logps*valid_mask
+    log_prob = per_token_logps.sum(-1)
+    num_valid_tokens = valid_mask.sum(-1).clamp(min=1) 
+    average_log_prob = log_prob / num_valid_tokens
+    per_token_logps = torch.concat([torch.zeros(batch_size, 1), per_token_logps], dim=1)
     ### <===
 
-    assert per_token_logps.shape == labels.shape, f"per_token_logps.shape={per_token_logps.shape}, labels.shape={labels.shape}"
+    assert (
+        per_token_logps.shape == labels.shape
+    ), f"per_token_logps.shape={per_token_logps.shape}, labels.shape={labels.shape}"
 
     if return_per_token_logp:
         return per_token_logps
@@ -157,7 +193,6 @@ def get_batch_logps(logits: torch.FloatTensor, labels: torch.LongTensor, tokeniz
         return per_token_logps, log_prob, average_log_prob
 
     return log_prob, average_log_prob
-
 
 
 def save_logp_pkl(data, cache_file, logps, overwrite_logps=False):
@@ -169,28 +204,32 @@ def save_logp_pkl(data, cache_file, logps, overwrite_logps=False):
         except:
             line = data.iloc[index]
         logp_data = {}
-        logp_data['logps']=logps[index]
+        logp_data["logps"] = logps[index]
 
         new_line = copy.deepcopy(line)
 
-        if 'logps' in new_line.keys():
-            assert overwrite_logps, 'Found existing logp data, pass overwrite_logps=True to force overwritting'
-            new_line['logps'] = json.dumps(logp_data)
+        if "logps" in new_line.keys():
+            assert (
+                overwrite_logps
+            ), "Found existing logp data, pass overwrite_logps=True to force overwritting"
+            new_line["logps"] = json.dumps(logp_data)
 
         else:
-            assert (('question' in list(new_line.keys()))
-                    and ('chosen' in list(new_line.keys()))
-                    and ('rejected' in list(new_line.keys()))), \
-                f'Undefined data structure, expecting [Q, Win, Rej] in keys, got {new_line.keys()}'
-            new_line['logps'] = json.dumps(logp_data)
+            assert (
+                ("question" in list(new_line.keys()))
+                and ("chosen" in list(new_line.keys()))
+                and ("rejected" in list(new_line.keys()))
+            ), f"Undefined data structure, expecting [Q, Win, Rej] in keys, got {new_line.keys()}"
+            new_line["logps"] = json.dumps(logp_data)
 
         out_data.append(new_line)
 
     torch.distributed.barrier()
 
     if torch.distributed.get_rank() == 0:
-        with open(cache_file, 'wb') as f:
+        with open(cache_file, "wb") as f:
             pickle.dump(out_data, f)
+
 
 class PreferenceModel:
     def __init__(self, model_path, max_length=2048) -> None:
@@ -202,9 +241,11 @@ class PreferenceModel:
         )
 
         self.model = model
-        tokenizer = AutoTokenizer.from_pretrained(model_name_or_path, trust_remote_code=True)
+        tokenizer = AutoTokenizer.from_pretrained(
+            model_name_or_path, trust_remote_code=True
+        )
 
-        self.model = self.model.to(device='cuda')
+        self.model = self.model.to(device="cuda")
         self.tokenizer = tokenizer
 
         self.model.eval()
@@ -222,31 +263,36 @@ class PreferenceModel:
         # print("self.slice_config:", self.slice_config)
 
     def inference_logp(self, sample, ans_key):
-        assert len(sample[ans_key]) == 1, f'len(sample[ans_key]) = {len(sample[ans_key])}'
+        assert (
+            len(sample[ans_key]) == 1
+        ), f"len(sample[ans_key]) = {len(sample[ans_key])}"
         model_inputs = sample[ans_key][0]
 
         for key in model_inputs:
             if isinstance(model_inputs[key], list):
-                model_inputs[key] = [model_inputs[key][i].to(self.model.device) for i in range(len(model_inputs[key]))]
+                model_inputs[key] = [
+                    model_inputs[key][i].to(self.model.device)
+                    for i in range(len(model_inputs[key]))
+                ]
             else:
                 model_inputs[key] = model_inputs[key].to(self.model.device)
 
         model_inputs = data_collator([model_inputs], max_length=self.max_length)
 
         with torch.inference_mode():
-            output = self.model(
-                model_inputs
-            )
+            output = self.model(model_inputs)
 
             per_token_logp, log_prob, average_log_prob = get_batch_logps(
-                output.logits, model_inputs['labels'], self.tokenizer, return_all=True)
+                output.logits, model_inputs["labels"], self.tokenizer, return_all=True
+            )
 
-            assert per_token_logp.size(1) >= model_inputs['input_ids'].size(1) - 1
+            assert per_token_logp.size(1) >= model_inputs["input_ids"].size(1) - 1
             per_token_logp = per_token_logp.tolist()
             log_prob = log_prob.tolist()
             average_log_prob = average_log_prob.tolist()
 
         return per_token_logp, log_prob, average_log_prob
+
 
 def get_multimodal_sample_logps(model, dataloader):
     win_logp_list = []
@@ -259,15 +305,14 @@ def get_multimodal_sample_logps(model, dataloader):
     rej_per_token_logp_list = []
 
     with torch.inference_mode():
-        idx=0
+        idx = 0
         for batch in tqdm.tqdm(dataloader):
-            for key in ['chosen', 'rejected']:
+            for key in ["chosen", "rejected"]:
                 per_token_logp, log_prob, average_log_prob = model.inference_logp(
-                    sample=batch,
-                    ans_key=key
+                    sample=batch, ans_key=key
                 )
 
-                if key == 'chosen':
+                if key == "chosen":
                     win_logp_list += log_prob
                     win_avg_logp_list += average_log_prob
                     win_per_token_logp_list += per_token_logp
@@ -278,7 +323,15 @@ def get_multimodal_sample_logps(model, dataloader):
 
             idx += 1
 
-    return win_logp_list, win_avg_logp_list, win_per_token_logp_list, rej_logp_list, rej_avg_logp_list, rej_per_token_logp_list
+    return (
+        win_logp_list,
+        win_avg_logp_list,
+        win_per_token_logp_list,
+        rej_logp_list,
+        rej_avg_logp_list,
+        rej_per_token_logp_list,
+    )
+
 
 def colloator_fn(data_list):
     data = {}
@@ -287,35 +340,73 @@ def colloator_fn(data_list):
 
     return data
 
-def get_dataset_inference_logp(model_path, data_path, img_dir, cache_file, transform=None, slice_config=None, batch_vision=True, max_length=2048):
+
+def get_dataset_inference_logp(
+    model_path,
+    data_path,
+    img_dir,
+    cache_file,
+    transform=None,
+    slice_config=None,
+    batch_vision=True,
+    max_length=2048,
+):
     model = PreferenceModel(model_path, max_length=max_length)
     org_data = read_json(data_path) if isinstance(data_path, str) else data_path
-    dataset = PreferenceInferenceDataset(data=org_data, img_dir=img_dir,
-                                         tokenizer=model.tokenizer,
-                                         transform=transform if transform is not None else build_transform(),
-                                         slice_config=slice_config if slice_config is not None else model.slice_config,
-                                         batch_vision=batch_vision,
-                                         max_length=max_length)
+    dataset = PreferenceInferenceDataset(
+        data=org_data,
+        img_dir=img_dir,
+        tokenizer=model.tokenizer,
+        transform=transform if transform is not None else build_transform(),
+        slice_config=slice_config if slice_config is not None else model.slice_config,
+        batch_vision=batch_vision,
+        max_length=max_length,
+    )
 
-    dataloader = torch_data.DataLoader(dataset, batch_size=1, collate_fn=colloator_fn,
-                                       num_workers=5, shuffle=False,
-                                       sampler=InferenceSampler(len(dataset)))
+    dataloader = torch_data.DataLoader(
+        dataset,
+        batch_size=1,
+        collate_fn=colloator_fn,
+        num_workers=5,
+        shuffle=False,
+        sampler=InferenceSampler(len(dataset)),
+    )
 
-    outputs = get_multimodal_sample_logps(model, dataloader) # win_logp_list, win_avg_logp_list, win_per_token_logp_list, rej_logp_list, rej_avg_logp_list, rej_per_token_logp_list
+    outputs = get_multimodal_sample_logps(
+        model, dataloader
+    )  # win_logp_list, win_avg_logp_list, win_per_token_logp_list, rej_logp_list, rej_avg_logp_list, rej_per_token_logp_list
 
     world_size = torch.distributed.get_world_size()
     merged_outputs = [[None for _ in range(world_size)] for i in range(len(outputs))]
     for i in range(len(outputs)):
         torch.distributed.all_gather_object(merged_outputs[i], outputs[i])
-        merged_outputs[i] = [_ for _ in itertools.chain.from_iterable(merged_outputs[i])]
+        merged_outputs[i] = [
+            _ for _ in itertools.chain.from_iterable(merged_outputs[i])
+        ]
 
+    (
+        win_logp_list,
+        win_avg_logp_list,
+        win_per_token_logp_list,
+        rej_logp_list,
+        rej_avg_logp_list,
+        rej_per_token_logp_list,
+    ) = merged_outputs
 
-    win_logp_list, win_avg_logp_list, win_per_token_logp_list, rej_logp_list, rej_avg_logp_list, rej_per_token_logp_list \
-        = merged_outputs
+    logps = list(
+        zip(
+            win_logp_list,
+            win_avg_logp_list,
+            win_per_token_logp_list,
+            rej_logp_list,
+            rej_avg_logp_list,
+            rej_per_token_logp_list,
+        )
+    )
 
-    logps = list(zip(win_logp_list, win_avg_logp_list, win_per_token_logp_list, rej_logp_list, rej_avg_logp_list, rej_per_token_logp_list))
-
-    data_with_logp = save_logp_pkl(dataset.data, cache_file, logps, overwrite_logps=True)
+    data_with_logp = save_logp_pkl(
+        dataset.data, cache_file, logps, overwrite_logps=True
+    )
 
     torch.distributed.barrier()
 

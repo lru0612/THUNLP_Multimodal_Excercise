@@ -9,7 +9,7 @@ NODE_RANK=0
 MASTER_ADDR=localhost
 MASTER_PORT=6001
 
-MODEL="MODEL_PATH"
+MODEL="MLLM_Excercise_Model"
 DATA="data/train.json"
 EVAL_DATA="data/test.json"
 MODEL_MAX_Length=2048 # if conduct multi-images sft, please set MODEL_MAX_Length=4096
@@ -44,9 +44,9 @@ torchrun $DISTRIBUTED_ARGS mllm/finetune.py  \
     --output_dir output/mllm_sft_training \
     --logging_dir output/mllm_sft_training/log \
     --logging_strategy "steps" \
-    --per_device_train_batch_size 1 \
+    --per_device_train_batch_size 2 \
     --per_device_eval_batch_size 1 \
-    --gradient_accumulation_steps 1 \
+    --gradient_accumulation_steps 8 \
     --evaluation_strategy "steps" \
     --save_strategy "steps" \
     --save_steps 60 \
