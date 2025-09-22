@@ -93,13 +93,25 @@ class MLLMModel(MLLMPreTrainedModel):
             for i in vision_hidden_states
         ]
 
+        combined_embedding = []
         bs = len(data["input_ids"])
         ### TODO===> 合并 vision_hidden_states 与 vllm_embedding，
         # 其中，vision_hidden_states 为视觉编码，当前 vllm_embedding 仅为语言模型编码
         for i in range(bs):
-            vllm_embedding[i] = torch.cat(
-                [vllm_embedding[i], vision_hidden_states[i]], dim=0
-            )
+            vision_feat = vision_hidden_states[i]
+            image_bound = data["image_bound"][i]
+            new_embedding = []
+            text_start = 0
+            
+            for j, (start, end) in enumerate(image_bound):
+                new_embedding.append(vllm_embedding[i][text_start:start])
+                if j < len(vision_feat):
+                    new_embedding.append(vision_feat[j])  
+                text_start = end
+            
+            new_embedding.append(vllm_embedding[i][text_start:])
+            combined_embedding.append(torch.cat(new_embedding, dim=0))
+        vllm_embedding = torch.stack(combined_embedding, dim=0)
         ### <===
 
         return vllm_embedding, vision_hidden_states
@@ -225,7 +237,6 @@ class MLLMModel(MLLMPreTrainedModel):
             "inputs_embeds": inputs_embeds,
             "pad_token_id": 0,
             "eos_token_id": terminators,
-            "streamer": streamer,
         }
         generation_kwargs.update(kwargs)
         output = self.llm.generate(**generation_kwargs)

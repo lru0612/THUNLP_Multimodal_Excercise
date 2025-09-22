@@ -165,19 +165,25 @@ def get_batch_logps(
     log_prob = None
     average_log_prob = None
     shift_logits = logits[..., :-1, :].contiguous()
-    shift_labels = labels[..., 1:].contiguous()#(batch_size, sequence_length-1)
+    shift_labels = labels[..., 1:].contiguous()  # (batch_size, sequence_length-1)
 
-    valid_mask=(shift_labels!=-100)
+    valid_mask = shift_labels != -100
     batch_size = shift_logits.size(0)
     vocab_size = shift_logits.size(-1)
     shift_logits = shift_logits.view(-1, vocab_size)
-    log_probs = F.log_softmax(shift_logits, dim=-1) # (batch_size*sequence_length, vocab_size)
-    shift_labels = shift_labels.view(-1)#(batch_size*sequence_length,)
+    log_probs = F.log_softmax(
+        shift_logits, dim=-1
+    )  # (batch_size*sequence_length, vocab_size)
+    shift_labels = shift_labels.view(-1)  # (batch_size*sequence_length,)
 
-    per_token_logps = torch.gather(log_probs, dim=1, index=shift_labels.unsqueeze(1)).squeeze(1).view(batch_size, -1)
-    per_token_logps = per_token_logps*valid_mask
+    per_token_logps = (
+        torch.gather(log_probs, dim=1, index=shift_labels.unsqueeze(1))
+        .squeeze(1)
+        .view(batch_size, -1)
+    )
+    per_token_logps = per_token_logps * valid_mask
     log_prob = per_token_logps.sum(-1)
-    num_valid_tokens = valid_mask.sum(-1).clamp(min=1) 
+    num_valid_tokens = valid_mask.sum(-1).clamp(min=1)
     average_log_prob = log_prob / num_valid_tokens
     per_token_logps = torch.concat([torch.zeros(batch_size, 1), per_token_logps], dim=1)
     ### <===

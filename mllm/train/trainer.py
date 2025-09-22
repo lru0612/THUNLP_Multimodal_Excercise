@@ -295,9 +295,11 @@ class PreferenceTrainer(Trainer):
         losses = None
         chosen_rewards = None
         rejected_rewards = None
-        chosen_rewards = beta * (policy_chosen_logps-reference_chosen_logps)
-        rejected_rewards = beta * (policy_rejected_logps-reference_rejected_logps)
-        losses = -F.logsigmoid(chosen_rewards) -0.5*( F.logsigmoid(-rejected_rewards)+F.logsigmoid(-chosen_rewards))
+        chosen_rewards = beta * (policy_chosen_logps - reference_chosen_logps)
+        rejected_rewards = beta * (policy_rejected_logps - reference_rejected_logps)
+        losses = -F.logsigmoid(chosen_rewards) - 0.5 * (
+            F.logsigmoid(-rejected_rewards) + F.logsigmoid(-chosen_rewards)
+        )
         return losses, chosen_rewards.detach(), rejected_rewards.detach()
         ### <===
 
@@ -348,7 +350,7 @@ class PreferenceTrainer(Trainer):
 
         ### ===> TODO: 计算训练过程中，模型在正、负样本上的 logp
         # 注意：我们在数据处理中获取了正负样本拼接后的输入信息，需要将拼接后的输出结果还原
-        
+
         if not self.args.use_lora:
             outputs = self.model(data=data, use_cache=False)
         else:
@@ -356,21 +358,20 @@ class PreferenceTrainer(Trainer):
                 outputs = self.model.base_model(data=data, use_cache=False)
 
         all_logits = outputs.logits
-        
 
         batch_size = win_input_ids.size(0)
-        
+
         chosen_logits = all_logits[:batch_size]
         rejected_logits = all_logits[batch_size:]
-        
+
         chosen_labels = concatenated_labels[:batch_size]
         rejected_labels = concatenated_labels[batch_size:]
 
         policy_win_logp = get_batch_logps(
-            chosen_logits, chosen_labels, self.tokenizer,return_per_token_logp=True
+            chosen_logits, chosen_labels, self.tokenizer, return_per_token_logp=True
         )
         policy_rej_logp = get_batch_logps(
-            rejected_logits, rejected_labels, self.tokenizer,return_per_token_logp=True
+            rejected_logits, rejected_labels, self.tokenizer, return_per_token_logp=True
         )
         ### <===
 

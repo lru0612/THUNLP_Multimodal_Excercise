@@ -96,10 +96,14 @@ class MLLMEvalModel(MLLMModel):
                 "repetition_penalty": 1.05,
             }
         else:
+            # generation_config = {
+            #     "num_beams": 3,
+            #     "repetition_penalty": 1.2,
+            # }
             generation_config = {
-                "num_beams": 3,
-                "repetition_penalty": 1.2,
-            }
+                "do_sample": False,
+                "num_beams": 1,
+            }#greedy
 
         if min_new_tokens > 0:
             generation_config["min_new_tokens"] = min_new_tokens
@@ -157,7 +161,7 @@ class MLLMEvalModel(MLLMModel):
                 current_dialog.append({"role": msg["role"], "content": content})
             prompt = tokenizer.apply_chat_template(
                 current_dialog,
-                tokenize=True,
+                tokenize=False,
                 add_generation_prompt=True,
                 return_tensors="pt",
             )

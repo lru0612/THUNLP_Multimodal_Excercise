@@ -188,6 +188,7 @@ class ModelProcessor(ProcessorMixin):
         input_ids_list = []
         image_bounds_list = []
         for index, text in enumerate(texts):
+            # print(text)
             image_tags = re.findall(pattern, text)
             assert len(image_tags) == len(image_sizes[index])
             text_chunks = text.split(pattern)
