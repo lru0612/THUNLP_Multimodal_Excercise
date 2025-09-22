@@ -556,132 +556,228 @@ class GPT4GenDataset:
 
 
 if __name__ == "__main__":
-    GPTGEN_TRAIN_COMMON_CFG = dict(
-        type="GPT4Gen",
-        filename=r"data/VG/shikra_data/GPT4GEN_BoxCoT_train.jsonl",
-        image_folder=r"data/VG/images/flickr30k-images",
+    # GPTGEN_TRAIN_COMMON_CFG = dict(
+    #     type="GPT4Gen",
+    #     filename=r"data/VG/shikra_data/GPT4GEN_BoxCoT_train.jsonl",
+    #     image_folder=r"data/VG/images/flickr30k-images",
+    # )
+
+    # DEFAULT_TRAIN_DATASET = dict(
+    #     flickr=dict(
+    #         type="FlickrDataset",
+    #         filename=r"data/VG/shikra_data/CWB_flickr30k_train.jsonl",
+    #         image_folder=r"data/VG/images/flickr30k-images",
+    #         template_file=r"data/VG/template/flickr30k.json",
+    #     ),
+    #     rec=dict(
+    #         type="RECDataset",
+    #         filename=r"data/VG/shikra_data/REC_ref3_train.jsonl",
+    #         image_folder=r"data/VG/images/train2014",
+    #         template_file=r"data/VG/template/REC.json",
+    #     ),
+    #     recvg=dict(
+    #         type="RECDataset",
+    #         filename=r"data/VG/shikra_data/GC_genome196_train.jsonl",
+    #         image_folder=r"data/VG/images",
+    #         template_file=r"data/VG/template/REC.json",
+    #     ),
+    #     reg=dict(
+    #         type="REGDataset",
+    #         filename=r"data/VG/shikra_data/REC_ref3_train.jsonl",
+    #         image_folder=r"data/VG/images/train2014/",
+    #         template_file=r"data/VG/template/REG.json",
+    #     ),
+    #     gc=dict(
+    #         type="GCDataset",
+    #         filename=r"data/VG/shikra_data/GC_genome196_train.jsonl",
+    #         image_folder=r"data/VG/images",
+    #         template_file=r"data/VG/template/GC.json",
+    #     ),
+    #     GPT4GEN_QA=dict(
+    #         **GPTGEN_TRAIN_COMMON_CFG,
+    #         version="a",
+    #         template_file=r"data/VG/template/VQA.json",
+    #     ),
+    #     GPT4GEN_QC=dict(
+    #         **GPTGEN_TRAIN_COMMON_CFG,
+    #         version="c",
+    #         template_file=r"data/VG/template/VQA_CoT.json",
+    #     ),
+    #     GPT4GEN_QBC=dict(
+    #         **GPTGEN_TRAIN_COMMON_CFG,
+    #         version="bc",
+    #         template_file=r"data/VG/template/VQA_BCoT.json",
+    #     ),
+    #     GPT4GEN_RD_QBC=dict(
+    #         type=GPTGEN_TRAIN_COMMON_CFG["type"],
+    #         image_folder=GPTGEN_TRAIN_COMMON_CFG["image_folder"],
+    #         filename="data/VG/shikra_data/GPT4GEN_RD_BoxCoT_train.jsonl",
+    #         version="bc",
+    #         template_file=r"data/VG/template/VQA_BCoT.json",
+    #     ),
+    # )
+
+    # datasets = [
+    #     RECDataset(
+    #         filename=DEFAULT_TRAIN_DATASET["recvg"]["filename"],
+    #         version="vg",
+    #         ratio=1 / 20,
+    #         image_folders=DEFAULT_TRAIN_DATASET["recvg"]["image_folder"],
+    #         template_file=DEFAULT_TRAIN_DATASET["recvg"]["template_file"],
+    #     ),
+    #     GCDataset(
+    #         filename=DEFAULT_TRAIN_DATASET["gc"]["filename"],
+    #         ratio=1 / 20,
+    #         template_file=DEFAULT_TRAIN_DATASET["gc"]["template_file"],
+    #         image_folders=DEFAULT_TRAIN_DATASET["gc"]["image_folder"],
+    #     ),
+    #     RECDataset(
+    #         filename=DEFAULT_TRAIN_DATASET["rec"]["filename"],
+    #         image_folders=DEFAULT_TRAIN_DATASET["rec"]["image_folder"],
+    #         version="coco",
+    #         template_file=DEFAULT_TRAIN_DATASET["rec"]["template_file"],
+    #     ),
+    #     REGDataset(
+    #         filename=DEFAULT_TRAIN_DATASET["reg"]["filename"],
+    #         template_file=DEFAULT_TRAIN_DATASET["reg"]["template_file"],
+    #         image_folders=DEFAULT_TRAIN_DATASET["reg"]["image_folder"],
+    #     ),
+    #     FlickrDataset(
+    #         filename=DEFAULT_TRAIN_DATASET["flickr"]["filename"],
+    #         template_file=DEFAULT_TRAIN_DATASET["flickr"]["template_file"],
+    #         image_folders=DEFAULT_TRAIN_DATASET["flickr"]["image_folder"],
+    #     ),
+    #     GPT4GenDataset(
+    #         filename=DEFAULT_TRAIN_DATASET["GPT4GEN_QA"]["filename"],
+    #         version="a",
+    #         template_file=DEFAULT_TRAIN_DATASET["GPT4GEN_QA"]["template_file"],
+    #         image_folders=DEFAULT_TRAIN_DATASET["GPT4GEN_QA"]["image_folder"],
+    #     ),
+    #     GPT4GenDataset(
+    #         filename=DEFAULT_TRAIN_DATASET["GPT4GEN_QC"]["filename"],
+    #         version="c",
+    #         template_file=DEFAULT_TRAIN_DATASET["GPT4GEN_QC"]["template_file"],
+    #         image_folders=DEFAULT_TRAIN_DATASET["GPT4GEN_QC"]["image_folder"],
+    #     ),
+    #     GPT4GenDataset(
+    #         filename=DEFAULT_TRAIN_DATASET["GPT4GEN_QBC"]["filename"],
+    #         version="bc",
+    #         template_file=DEFAULT_TRAIN_DATASET["GPT4GEN_QBC"]["template_file"],
+    #         image_folders=DEFAULT_TRAIN_DATASET["GPT4GEN_QBC"]["image_folder"],
+    #     ),
+    #     GPT4GenDataset(
+    #         filename=DEFAULT_TRAIN_DATASET["GPT4GEN_RD_QBC"]["filename"],
+    #         version="RD_bc",
+    #         template_file=DEFAULT_TRAIN_DATASET["GPT4GEN_RD_QBC"]["template_file"],
+    #         image_folders=DEFAULT_TRAIN_DATASET["GPT4GEN_RD_QBC"]["image_folder"],
+    #     ),
+    # ]
+
+    REC_TEST_COMMON_CFG = dict(
+    type='RECDataset',
+    template_file=r'data/VG/template/REC.json',
+    image_folder=r'data/VG/images/train2014',
+    max_dynamic_size=None,
     )
 
-    DEFAULT_TRAIN_DATASET = dict(
-        flickr=dict(
-            type="FlickrDataset",
-            filename=r"data/VG/shikra_data/CWB_flickr30k_train.jsonl",
-            image_folder=r"data/VG/images/flickr30k-images",
-            template_file=r"data/VG/template/flickr30k.json",
+    DEFAULT_TEST_REC_VARIANT = dict(
+        REC_REFCOCOG_UMD_TEST=dict(
+            **REC_TEST_COMMON_CFG,
+            filename=r'data/VG/shikra_data/REC_refcocog_umd_test.jsonl',
         ),
-        rec=dict(
-            type="RECDataset",
-            filename=r"data/VG/shikra_data/REC_ref3_train.jsonl",
-            image_folder=r"data/VG/images/train2014",
-            template_file=r"data/VG/template/REC.json",
+        REC_REFCOCOA_UNC_TESTA=dict(
+            **REC_TEST_COMMON_CFG,
+            filename=r'data/VG/shikra_data/REC_refcoco+_unc_testA.jsonl',
         ),
-        recvg=dict(
-            type="RECDataset",
-            filename=r"data/VG/shikra_data/GC_genome196_train.jsonl",
-            image_folder=r"data/VG/images",
-            template_file=r"data/VG/template/REC.json",
+        REC_REFCOCOA_UNC_TESTB=dict(
+            **REC_TEST_COMMON_CFG,
+            filename=r'data/VG/shikra_data/REC_refcoco+_unc_testB.jsonl',
         ),
-        reg=dict(
-            type="REGDataset",
-            filename=r"data/VG/shikra_data/REC_ref3_train.jsonl",
-            image_folder=r"data/VG/images/train2014/",
-            template_file=r"data/VG/template/REG.json",
+        REC_REFCOCO_UNC_TESTA=dict(
+            **REC_TEST_COMMON_CFG,
+            filename=r'data/VG/shikra_data/REC_refcoco_unc_testA.jsonl',
         ),
-        gc=dict(
-            type="GCDataset",
-            filename=r"data/VG/shikra_data/GC_genome196_train.jsonl",
-            image_folder=r"data/VG/images",
-            template_file=r"data/VG/template/GC.json",
+        REC_REFCOCO_UNC_TESTB=dict(
+            **REC_TEST_COMMON_CFG,
+            filename=r'data/VG/shikra_data/REC_refcoco_unc_testB.jsonl',
         ),
-        GPT4GEN_QA=dict(
-            **GPTGEN_TRAIN_COMMON_CFG,
-            version="a",
-            template_file=r"data/VG/template/VQA.json",
+        REC_REFCOCOG_UMD_VAL=dict(
+            **REC_TEST_COMMON_CFG,
+            filename=r'data/VG/shikra_data/REC_refcocog_umd_val.jsonl',
         ),
-        GPT4GEN_QC=dict(
-            **GPTGEN_TRAIN_COMMON_CFG,
-            version="c",
-            template_file=r"data/VG/template/VQA_CoT.json",
+        REC_REFCOCOA_UNC_VAL=dict(
+            **REC_TEST_COMMON_CFG,
+            filename=r'data/VG/shikra_data/REC_refcoco+_unc_val.jsonl',
         ),
-        GPT4GEN_QBC=dict(
-            **GPTGEN_TRAIN_COMMON_CFG,
-            version="bc",
-            template_file=r"data/VG/template/VQA_BCoT.json",
-        ),
-        GPT4GEN_RD_QBC=dict(
-            type=GPTGEN_TRAIN_COMMON_CFG["type"],
-            image_folder=GPTGEN_TRAIN_COMMON_CFG["image_folder"],
-            filename="data/VG/shikra_data/GPT4GEN_RD_BoxCoT_train.jsonl",
-            version="bc",
-            template_file=r"data/VG/template/VQA_BCoT.json",
+        REC_REFCOCO_UNC_VAL=dict(
+            **REC_TEST_COMMON_CFG,
+            filename=r'data/VG/shikra_data/REC_refcoco_unc_val.jsonl',
         ),
     )
-
-    datasets = [
+    test_datasets = [
         RECDataset(
-            filename=DEFAULT_TRAIN_DATASET["recvg"]["filename"],
-            version="vg",
-            ratio=1 / 20,
-            image_folders=DEFAULT_TRAIN_DATASET["recvg"]["image_folder"],
-            template_file=DEFAULT_TRAIN_DATASET["recvg"]["template_file"],
-        ),
-        GCDataset(
-            filename=DEFAULT_TRAIN_DATASET["gc"]["filename"],
-            ratio=1 / 20,
-            template_file=DEFAULT_TRAIN_DATASET["gc"]["template_file"],
-            image_folders=DEFAULT_TRAIN_DATASET["gc"]["image_folder"],
+            filename=DEFAULT_TEST_REC_VARIANT["REC_REFCOCOG_UMD_TEST"]["filename"],
+            template_file=DEFAULT_TEST_REC_VARIANT["REC_REFCOCOG_UMD_TEST"]["template_file"],
+            image_folders=DEFAULT_TEST_REC_VARIANT["REC_REFCOCOG_UMD_TEST"]["image_folder"],
+            ratio=1/5,
         ),
         RECDataset(
-            filename=DEFAULT_TRAIN_DATASET["rec"]["filename"],
-            image_folders=DEFAULT_TRAIN_DATASET["rec"]["image_folder"],
-            version="coco",
-            template_file=DEFAULT_TRAIN_DATASET["rec"]["template_file"],
+            filename=DEFAULT_TEST_REC_VARIANT["REC_REFCOCOA_UNC_TESTA"]["filename"],
+            template_file=DEFAULT_TEST_REC_VARIANT["REC_REFCOCOA_UNC_TESTA"]["template_file"],
+            image_folders=DEFAULT_TEST_REC_VARIANT["REC_REFCOCOA_UNC_TESTA"]["image_folder"],
+            ratio=1/5,
         ),
-        REGDataset(
-            filename=DEFAULT_TRAIN_DATASET["reg"]["filename"],
-            template_file=DEFAULT_TRAIN_DATASET["reg"]["template_file"],
-            image_folders=DEFAULT_TRAIN_DATASET["reg"]["image_folder"],
+        
+        RECDataset(
+            filename=DEFAULT_TEST_REC_VARIANT["REC_REFCOCOA_UNC_TESTB"]["filename"],
+            template_file=DEFAULT_TEST_REC_VARIANT["REC_REFCOCOA_UNC_TESTB"]["template_file"],
+            image_folders=DEFAULT_TEST_REC_VARIANT["REC_REFCOCOA_UNC_TESTB"]["image_folder"],
+            ratio=1/5,
         ),
-        FlickrDataset(
-            filename=DEFAULT_TRAIN_DATASET["flickr"]["filename"],
-            template_file=DEFAULT_TRAIN_DATASET["flickr"]["template_file"],
-            image_folders=DEFAULT_TRAIN_DATASET["flickr"]["image_folder"],
+        
+        RECDataset(
+            filename=DEFAULT_TEST_REC_VARIANT["REC_REFCOCO_UNC_TESTA"]["filename"],
+            template_file=DEFAULT_TEST_REC_VARIANT["REC_REFCOCO_UNC_TESTA"]["template_file"],
+            image_folders=DEFAULT_TEST_REC_VARIANT["REC_REFCOCO_UNC_TESTA"]["image_folder"],
+            ratio=1/5,
         ),
-        GPT4GenDataset(
-            filename=DEFAULT_TRAIN_DATASET["GPT4GEN_QA"]["filename"],
-            version="a",
-            template_file=DEFAULT_TRAIN_DATASET["GPT4GEN_QA"]["template_file"],
-            image_folders=DEFAULT_TRAIN_DATASET["GPT4GEN_QA"]["image_folder"],
+        
+        RECDataset(
+            filename=DEFAULT_TEST_REC_VARIANT["REC_REFCOCO_UNC_TESTB"]["filename"],
+            template_file=DEFAULT_TEST_REC_VARIANT["REC_REFCOCO_UNC_TESTB"]["template_file"],
+            image_folders=DEFAULT_TEST_REC_VARIANT["REC_REFCOCO_UNC_TESTB"]["image_folder"],
+            ratio=1/5,
         ),
-        GPT4GenDataset(
-            filename=DEFAULT_TRAIN_DATASET["GPT4GEN_QC"]["filename"],
-            version="c",
-            template_file=DEFAULT_TRAIN_DATASET["GPT4GEN_QC"]["template_file"],
-            image_folders=DEFAULT_TRAIN_DATASET["GPT4GEN_QC"]["image_folder"],
+        RECDataset(
+            filename=DEFAULT_TEST_REC_VARIANT["REC_REFCOCOG_UMD_VAL"]["filename"],
+            template_file=DEFAULT_TEST_REC_VARIANT["REC_REFCOCOG_UMD_VAL"]["template_file"],
+            image_folders=DEFAULT_TEST_REC_VARIANT["REC_REFCOCOG_UMD_VAL"]["image_folder"],
+            ratio=1/5,
         ),
-        GPT4GenDataset(
-            filename=DEFAULT_TRAIN_DATASET["GPT4GEN_QBC"]["filename"],
-            version="bc",
-            template_file=DEFAULT_TRAIN_DATASET["GPT4GEN_QBC"]["template_file"],
-            image_folders=DEFAULT_TRAIN_DATASET["GPT4GEN_QBC"]["image_folder"],
+        
+        RECDataset(
+            filename=DEFAULT_TEST_REC_VARIANT["REC_REFCOCOA_UNC_VAL"]["filename"],
+            template_file=DEFAULT_TEST_REC_VARIANT["REC_REFCOCOA_UNC_VAL"]["template_file"],
+            image_folders=DEFAULT_TEST_REC_VARIANT["REC_REFCOCOA_UNC_VAL"]["image_folder"],
+            ratio=1/5,
         ),
-        GPT4GenDataset(
-            filename=DEFAULT_TRAIN_DATASET["GPT4GEN_RD_QBC"]["filename"],
-            version="RD_bc",
-            template_file=DEFAULT_TRAIN_DATASET["GPT4GEN_RD_QBC"]["template_file"],
-            image_folders=DEFAULT_TRAIN_DATASET["GPT4GEN_RD_QBC"]["image_folder"],
+        
+        RECDataset(
+            filename=DEFAULT_TEST_REC_VARIANT["REC_REFCOCO_UNC_VAL"]["filename"],
+            template_file=DEFAULT_TEST_REC_VARIANT["REC_REFCOCO_UNC_VAL"]["template_file"],
+            image_folders=DEFAULT_TEST_REC_VARIANT["REC_REFCOCO_UNC_VAL"]["image_folder"],
+            ratio=1/5,
         ),
     ]
-
     ### ==> TODO: 实现用于Visual Grounding的指令微调数据集的构建
     tot = 0
     results = []
-    for dataset in datasets:
+    for dataset in test_datasets:
         results.extend(dataset.build())
     tot = len(results)
     ### <===
 
     # save
-    with open("data/train_minicpmv_grounding.json", "w") as f:
+    with open("data/test_minicpmv_grounding.json", "w") as f:
         json.dump(results, f, indent=4)
     print("Total # exmaples: %d" % tot)
