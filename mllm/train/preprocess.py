@@ -112,7 +112,7 @@ def data_collator(examples, padding_value=0, max_length=2048):
         if example.get("image_bound") is not None
     ]
     tgt_sizes = [
-        example["ttgt_sizesgt_"]
+        example["tgt_sizes"]
         for example in examples
         if example.get("tgt_sizes") is not None
     ]

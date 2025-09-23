@@ -1,8 +1,9 @@
 #!/bin/bash
 
 export PYTHONPATH=$PYTHONPATH:`realpath .`
-export CUDA_VISIBLE_DEVICES=4,5,6,7
-
+export CUDA_VISIBLE_DEVICES=0,1,2,3
+export NCCL_P2P_DISABLE="1"
+export NCCL_IB_DISABLE="1"
 GPUS_PER_NODE=4
 NNODES=1
 NODE_RANK=0
@@ -38,15 +39,15 @@ torchrun $DISTRIBUTED_ARGS mllm/finetune.py  \
     --tune_vision true \
     --tune_llm true \
     --model_max_length $MODEL_MAX_Length \
-    --max_slice_nums 9 \
+    --max_slice_nums 6 \
     --max_steps 1000 \
     --eval_steps 30 \
     --output_dir output/mllm_sft_training \
     --logging_dir output/mllm_sft_training/log \
     --logging_strategy "steps" \
-    --per_device_train_batch_size 2 \
+    --per_device_train_batch_size 1 \
     --per_device_eval_batch_size 1 \
-    --gradient_accumulation_steps 8 \
+    --gradient_accumulation_steps 1 \
     --evaluation_strategy "steps" \
     --save_strategy "steps" \
     --save_steps 60 \
