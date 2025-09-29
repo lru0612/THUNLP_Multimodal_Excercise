@@ -168,6 +168,7 @@ def get_batch_logps(
     shift_labels = labels[..., 1:].contiguous()  # (batch_size, sequence_length-1)
 
     valid_mask = shift_labels != -100
+    shift_labels = shift_labels.masked_fill(~valid_mask, 0)
     batch_size = shift_logits.size(0)
     vocab_size = shift_logits.size(-1)
     shift_logits = shift_logits.view(-1, vocab_size)
@@ -185,7 +186,7 @@ def get_batch_logps(
     log_prob = per_token_logps.sum(-1)
     num_valid_tokens = valid_mask.sum(-1).clamp(min=1)
     average_log_prob = log_prob / num_valid_tokens
-    per_token_logps = torch.concat([torch.zeros(batch_size, 1), per_token_logps], dim=1)
+    per_token_logps = torch.concat([torch.zeros(batch_size, 1).to(per_token_logps.device), per_token_logps], dim=1)
     ### <===
 
     assert (

@@ -1,4 +1,4 @@
-MODEL_NAME="output"
+MODEL_NAME="/home/user-C/THUNLP_Multimodal_Excercise/output/preference/mllm_preference_training_batch40_lr5e-7_beta0.5"
 
 echo "========================="
 echo "MODEL: $MODEL_NAME"

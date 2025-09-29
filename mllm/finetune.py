@@ -307,6 +307,14 @@ def init_model(model_args, data_args, training_args, lora_args):
     transform_func = build_transform()
 
     if training_args.task in ["LM", "Grounding"]:
+        if training_args.task == "Grounding":
+            rank0_print("Adding 1000 special location tokens for Grounding task.")
+            new_special_tokens = [f"<Loc{i}>" for i in range(1000)]
+            tokenizer.add_special_tokens(
+                {"additional_special_tokens": new_special_tokens}
+            )
+            model.llm.resize_token_embeddings(len(tokenizer))
+
         data_module = make_supervised_data_module(
             tokenizer=tokenizer,
             data_args=data_args,
@@ -363,6 +371,7 @@ def train():
     training_args.gradient_checkpointing_kwargs = {"use_reentrant": False}
 
     if training_args.task in ["LM", "Grounding"]:
+        print("training_args.lr_scheduler_type", training_args.lr_scheduler_type)
         trainer = SFTTrainer(
             model=model,
             tokenizer=tokenizer,

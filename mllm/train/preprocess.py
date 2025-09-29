@@ -16,6 +16,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+DEBUG_COUNTER = 0
 
 @dataclass
 class PreferenceDatasetDataCollator(object):
@@ -96,7 +97,7 @@ def data_collator(examples, padding_value=0, max_length=2048):
     input_ids = trim_and_pad(
         input_ids_list, batch_first=True, padding_value=padding_value
     )
-    targets = trim_and_pad(labels_list, batch_first=True, padding_value=padding_value)
+    targets = trim_and_pad(labels_list, batch_first=True, padding_value=-100)
     position_ids = trim_and_pad(
         position_ids_list, batch_first=True, padding_value=padding_value
     )
@@ -149,10 +150,13 @@ def preference_collator_fn(instances, pad_token_id=0, max_length=2048):
     concatenated_position_ids = concate_pad(
         win_batch["position_ids"], rej_batch["position_ids"], pad_token_id
     )
+    # BUG:缺少concatenated_attention_mask
+    concatenated_attention_mask = (concatenated_input_ids != pad_token_id).long()
 
     batch = dict(
         concatenated_input_ids=concatenated_input_ids,
         concatenated_labels=concatenated_labels,
+        concatenated_attention_mask=concatenated_attention_mask,   
         win_input_ids=win_batch["input_ids"],
         rej_input_ids=rej_batch["input_ids"],
         win_labels=win_batch["labels"],
@@ -227,6 +231,31 @@ def llm_conversation_to_ids(conversation, tokenizer):
     input_ids = tokenizer.apply_chat_template(
         chat, tokenize=True, add_generation_prompt=False
     )
+
+    global DEBUG_COUNTER
+    if DEBUG_COUNTER >0:
+        print("=============================================")
+        print("========== Tokenization Debug Info ==========")
+        print("=============================================")
+        print(f"----- Sample  -----")
+        print("\n[Raw Text to be Tokenized]:")
+        print(ret)
+        print("\n[Input IDs]:")
+        print(input_ids)
+
+        tokens = tokenizer.convert_ids_to_tokens(input_ids)
+        print("\n[Tokens]:")
+        print(tokens)
+
+        print("\n[ID -> Token Mapping (sample)]:")
+        sample_ids = input_ids 
+        for token_id in sample_ids:
+            print(f"{token_id} -> '{tokenizer.decode([token_id])}'")
+
+        print("=============================================")
+        DEBUG_COUNTER -= 1
+
+
     input_ids = np.array(input_ids[:-1])
 
     start_idxs = np.where(input_ids == tokenizer.convert_tokens_to_ids("<|im_start|>"))[
@@ -333,7 +362,7 @@ def preprocess(
             )
         else:
             conversations[0]["content"] = (
-                image_placeholder + "\n" + conversation[0]["content"]
+                image_placeholder + "\n" + conversations[0]["content"]
             )
         input_dict = conversation_to_ids(conversations, tokenizer, max_length)
     else:

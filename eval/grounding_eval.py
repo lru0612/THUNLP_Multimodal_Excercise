@@ -17,6 +17,77 @@ from mllm.model.processing import ModelProcessor
 from mllm.model.image_processing import ModelImageProcessor
 from utils.file_io import read_jsonlines, read_json
 
+class MLLMEvalModel(MLLMModel):
+    def chat(
+        self,
+        image,
+        msgs,
+        tokenizer,
+        processor,
+        max_new_tokens=1024,
+        max_inp_length=2048,
+        system_prompt="",
+        sampling=True,
+    ):
+        prompts, images = self.prepare_chat_inputs(
+            tokenizer, system_prompt, [msgs], [image]
+        )
+        print("prompts:", prompts)
+        inputs = processor(
+            prompts,
+            images,
+            return_tensors="pt",
+            max_length=max_inp_length,
+        ).to(self.device)
+        inputs.pop("image_sizes")
+
+        if sampling:
+            generation_config = {
+                "top_p": 0.8,
+                "top_k": 100,
+                "temperature": 0.7,
+                "do_sample": True,
+                "repetition_penalty": 1.05,
+            }
+        else:
+            generation_config = {
+                "num_beams": 3,
+                "repetition_penalty": 1.2,
+            }
+
+        with torch.inference_mode():
+            out = self.generate(
+                **inputs,
+                tokenizer=tokenizer,
+                max_new_tokens=max_new_tokens,
+                decode_text=True,
+                min_new_tokens=3,
+                **generation_config,
+            )
+            print("out:", out)
+        print("===================================")
+        return {"content": out[0]}
+
+    def prepare_chat_inputs(self, tokenizer, system_prompt, msgs_list, images_list):
+        prompts, img_inputs = [], []
+        for msgs, img in zip(msgs_list, images_list):
+            dialog = [{"role": "system", "content": system_prompt}]
+            for m in msgs:
+                content = m["content"]
+                if m["role"] == "user":
+                    if "<image>" in content:                     
+                        content = content.replace(
+                            "<image>", "<image>./</image>", 1
+                        )
+                    else:                                        
+                        content = "<image>./</image>\n" + content
+                dialog.append({"role": m["role"], "content": content})
+            prompt = tokenizer.apply_chat_template(
+                dialog, tokenize=False, add_generation_prompt=True
+            )
+            prompts.append(prompt)
+            img_inputs.append(img)
+        return prompts, img_inputs
 
 def box_iou(boxes1, boxes2):
     area1 = box_area(boxes1)
@@ -33,6 +104,18 @@ def box_iou(boxes1, boxes2):
     iou = inter / union
     return iou, union
 
+GRID = 1000
+
+def denorm_box(box, w, h, grid=GRID):
+    """Map box from 0-grid range back to image size."""
+    x0, y0, x1, y1 = box
+    return [
+            x0 / grid * w,
+            y0 / grid * h,
+            x1 / grid * w,
+            y1 / grid * h,
+        ]
+
 
 def vis_boxes(img, boxes, expr, save_name="output.png"):
     ### ==> TODO: 可视化Visual Grounding结果，包括给定图像、针对图像中对象的描述和对应对象的坐标框
@@ -48,7 +131,6 @@ def vis_boxes(img, boxes, expr, save_name="output.png"):
     except IOError:
         font = ImageFont.load_default()
 
-    # 假设第一个框是 Ground Truth，第二个是 Prediction
     box_info = [
         {"label": "Ground Truth", "color": "green"},
         {"label": "Prediction", "color": "red"},
@@ -66,15 +148,12 @@ def vis_boxes(img, boxes, expr, save_name="output.png"):
         color = info["color"]
         label = info["label"]
 
-        # 绘制矩形
         draw.rectangle(box, outline=color, width=3)
 
-        # 在框的上方绘制文字标签（如 "Ground Truth"）
         text_bbox = draw.textbbox((0, 0), label, font=font)
         text_width = text_bbox[2] - text_bbox[0]
         text_height = text_bbox[3] - text_bbox[1]
 
-        # 确定标签背景的位置，如果框太靠上，则把标签放在框的下方
         label_y_pos = box[1] - text_height - 2
         if label_y_pos < 0:
             label_y_pos = box[3] + 2
@@ -88,7 +167,6 @@ def vis_boxes(img, boxes, expr, save_name="output.png"):
         draw.rectangle(label_bg_box, fill=color)
         draw.text((box[0] + 2, label_y_pos), label, fill="white", font=font)
 
-    # --- 在图片底部添加完整的指代描述 (expr) ---
     wrapped_expr = textwrap.wrap(
         f"Expression: {expr}", width=int(img.width / (font.size * 0.65))
     )
@@ -112,7 +190,6 @@ def vis_boxes(img, boxes, expr, save_name="output.png"):
             draw.text((5, y_offset), line, font=font, fill="white")
             y_offset += line_height
 
-    # --- 保存最终的图片 ---
     img = img.convert("RGB")
     img.save(save_name)
 
@@ -120,7 +197,7 @@ def vis_boxes(img, boxes, expr, save_name="output.png"):
 
 
 def eval_model(args):
-    model = MLLMModel.from_pretrained(
+    model = MLLMEvalModel.from_pretrained(
         args.model_name_or_path,
         torch_dtype=torch.bfloat16,
     )
@@ -134,30 +211,35 @@ def eval_model(args):
 
     model.eval().cuda()
 
-    input_data = read_jsonlines(args.question_file)
+    input_data = read_json(args.question_file)
 
     ### TODO: Implement inference loop
     with torch.no_grad():
         correct = total_cnt = 0
         for item in tqdm(input_data):
-            image = os.path.join(args.image_dir, item["img_path"])
-            expr = item["expression"]
-            bbox = item["bbox"]
-            prompt = "Where is {} in image? answer in [x0,y0,x1,y1] format.".format(
-                expr
-            )
+            # image = os.path.join(args.image_dir, item["img_path"])
+            image = item["image"]
+            conversations = item["conversations"]
 
-            msgs = [{"role": "user", "content": prompt}]
+            # --- 解析 GT bbox -------------------------------------------------
+            content = conversations[1]["content"]
+            # 更新正则表达式以匹配 <box>[(x1, y1), (x2, y2)]</box> 格式
+            m = re.search(r"<box>\s*\[\s*\(\s*([\d\.]+)\s*,\s*([\d\.]+)\s*\)\s*,\s*\(\s*([\d\.]+)\s*,\s*([\d\.]+)\s*\)\s*\]\s*</box>", content)
+            assert m, f"bbox not found in: {content}"
+            # m.groups() 会返回 (x1, y1, x2, y2) 四个字符串
+            bbox = [float(x) for x in m.groups()]
+            # -------------------------------------------------------------------
 
+            msgs = [conversations[0]]
             if len(image) > 1000:
                 image = Image.open(io.BytesIO(base64.b64decode(image))).convert("RGB")
             else:
                 image = Image.open(image).convert("RGB")
+            w, h = image.size
 
             answer = model.chat(
                 image=image,
                 msgs=msgs,
-                context=None,
                 tokenizer=tokenizer,
                 sampling=args.sampling,
                 processor=processor,
@@ -165,17 +247,36 @@ def eval_model(args):
 
             # Calculate acc
             ### ==> TODO: 实现Visual Grounding的结果准确率计算方法
+            # 更新正则表达式以匹配 <box>[(x1, y1), (x2, y2)]</box> 格式
             pattern = re.compile(
-                r"\[\s*([\d\.]+)\s*,\s*([\d\.]+)\s*,\s*([\d\.]+)\s*,\s*([\d\.]+)\s*\]"
+                r"<box>\s*\[\s*\(\s*([\d\.]+)\s*,\s*([\d\.]+)\s*\)\s*,\s*\(\s*([\d\.]+)\s*,\s*([\d\.]+)\s*\)\s*\]\s*</box>"
             )
-            match1 = pattern.search(answer)
-            coords = match1.groups()
-            if len(coords) == 4:
+            match = pattern.search(answer["content"])
+
+            # ② 备选：四个数字由空格 / 逗号分隔 (这个备选逻辑可能不再需要，但暂时保留以防万一)
+            if match is None:
+                pattern_alt = re.compile(
+                    r"([\d\.]+)[, ]+([\d\.]+)[, ]+([\d\.]+)[, ]+([\d\.]+)"
+                )
+                match = pattern_alt.search(answer["content"])
+
+            if match:
+                # m.groups() 会返回 (x1, y1, x2, y2) 四个字符串
+                coords = match.groups()
                 predict_bbox = [float(c) for c in coords]
             else:
-                predict_bbox = (0.0, 0.0, 0.0, 0.0)
-            iou, _ = box_iou(predict_bbox, bbox)
-            iou = iou.item()
+                predict_bbox = [0.0, 0.0, 0.0, 0.0]
+            denorm_gt_bbox = denorm_box(bbox, w, h)
+            denorm_pred_bbox = denorm_box(predict_bbox, w, h)
+
+            # --- 将 list → Tensor[N,4] ---
+            pred_tensor = torch.tensor([denorm_pred_bbox], dtype=torch.float32)
+            gt_tensor   = torch.tensor([denorm_gt_bbox],         dtype=torch.float32)
+
+            iou = box_iou(pred_tensor, gt_tensor)[0].item()
+            print(f"IOU: {iou}")
+            # -----------------------------
+
             total_cnt += 1
             if iou >= 0.5:
                 correct += 1
@@ -183,17 +284,18 @@ def eval_model(args):
 
             # Visualize VG results
             ### ==> TODO: 实现Visual Grounding结果的可视化
+            os.makedirs(args.image_dir, exist_ok=True)
             if args.vis_nums > 0:
                 vis_boxes(
                     image,
-                    [bbox, predict_bbox],
-                    expr,
+                    [denorm_gt_bbox, denorm_pred_bbox],
+                    conversations[0]["content"],
                     save_name=f"{args.image_dir}/output_{total_cnt}.png",
                 )
                 args.vis_nums -= 1
             ### <===
 
-    print(f"Evaluating {args.qannotation_file} ...")
+    print(f"Evaluating {args.question_file} ...")
     print(f"Precision @ 1: {correct / total_cnt} \n")
 
 
@@ -201,9 +303,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model-name-or-path", type=str)
     parser.add_argument("--question-file", type=str)
-    parser.add_argument("--image-dir", type=str)
+    parser.add_argument("--image-dir", type=str, default="")
     parser.add_argument("--sampling", action="store_true")
-    parser.add_argument("--vis-nums", type=int, default=5)
+    parser.add_argument("--vis-nums", type=int, default=0)
     args = parser.parse_args()
 
     eval_model(args)

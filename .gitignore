@@ -2,6 +2,7 @@
 cuda*
 data/VG
 MLLM_Excercise_Model
+MLLM_sft_training
 data/*
 preference_train.json
 chair_300.pkl

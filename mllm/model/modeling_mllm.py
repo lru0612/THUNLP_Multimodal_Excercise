@@ -102,13 +102,13 @@ class MLLMModel(MLLMPreTrainedModel):
             image_bound = data["image_bound"][i]
             new_embedding = []
             text_start = 0
-            
+
             for j, (start, end) in enumerate(image_bound):
                 new_embedding.append(vllm_embedding[i][text_start:start])
                 if j < len(vision_feat):
-                    new_embedding.append(vision_feat[j])  
+                    new_embedding.append(vision_feat[j])
                 text_start = end
-            
+
             new_embedding.append(vllm_embedding[i][text_start:])
             combined_embedding.append(torch.cat(new_embedding, dim=0))
         vllm_embedding = torch.stack(combined_embedding, dim=0)

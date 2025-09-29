@@ -96,14 +96,14 @@ class MLLMEvalModel(MLLMModel):
                 "repetition_penalty": 1.05,
             }
         else:
-            # generation_config = {
-            #     "num_beams": 3,
-            #     "repetition_penalty": 1.2,
-            # }
             generation_config = {
-                "do_sample": False,
-                "num_beams": 1,
-            }#greedy
+                "num_beams": 3,
+                "repetition_penalty": 1.2,
+            }
+            # generation_config = {
+            #     "do_sample": False,
+            #     "num_beams": 1,
+            # }  # greedy
 
         if min_new_tokens > 0:
             generation_config["min_new_tokens"] = min_new_tokens

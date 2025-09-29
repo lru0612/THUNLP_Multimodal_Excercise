@@ -9,6 +9,7 @@ import os.path as op
 import transformers
 from torch.utils.data import Dataset
 import math
+import copy
 
 from PIL import Image
 from typing import Dict
@@ -21,7 +22,9 @@ logger = logging.getLogger(__name__)
 
 
 class GroundingSupervisedDataset(Dataset):
-    """Dataset for supervised fine-tuning."""
+    """Dataset for supervised fine-tuning Visual Grounding."""
+
+    GRID = 1000    
 
     def __init__(
         self,
@@ -70,7 +73,8 @@ class GroundingSupervisedDataset(Dataset):
             batch_vision=self.batch_vision,
             max_length=self.max_length,
         )
-
+        # print("data_dict[input_ids]:", data_dict["input_ids"])
+        # print("data_dict[target]:", data_dict["target"])
         return dict(
             input_ids=data_dict["input_ids"],
             position_ids=data_dict["position_ids"],

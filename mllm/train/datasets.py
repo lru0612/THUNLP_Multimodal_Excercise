@@ -55,12 +55,13 @@ class SupervisedDataset(Dataset):
         self.query_nums = query_nums
         self.batch_vision = batch_vision
         self.max_length = max_length
-
+        self.line_numbers = list(range(len(self.raw_data)))
+        random.shuffle(self.line_numbers)
     def __len__(self):
         return len(self.raw_data)
 
     def __getitem__(self, index):
-        sample = self.raw_data[index]
+        sample = self.raw_data[self.line_numbers[index]]
         try:
             images_dict = {"<image>": Image.open(sample["image"]).convert("RGB")}
         except Exception as e:
