@@ -248,8 +248,18 @@ def init_model(model_args, data_args, training_args, lora_args):
         model.vpm.requires_grad_(False)
     if not training_args.tune_llm:
         model.llm.requires_grad_(False)
-
-    if training_args.use_lora and training_args.task == "LM":
+    if "Grounding" in training_args.task and training_args.task != "Grounding":
+            if "100" in training_args.task:
+                print("Adding 1001 special location tokens for Grounding task.")
+                new_special_tokens = [f"<Loc{i}>" for i in range(1001)]
+            elif "32" in training_args.task:
+                print("Adding 1025 special location tokens for Grounding task.")
+                new_special_tokens = [f"<Loc{i}>" for i in range(1025)]
+            tokenizer.add_special_tokens(
+                {"additional_special_tokens": new_special_tokens}
+            )
+            model.llm.resize_token_embeddings(len(tokenizer))
+    if training_args.use_lora and training_args.task in ["LM", "Grounding", "Grounding100"]:
         if training_args.use_lora and training_args.tune_llm:
             raise ValueError(
                 "The model cannot simultaneously adjust LLM parameters and apply LoRA."
@@ -306,15 +316,7 @@ def init_model(model_args, data_args, training_args, lora_args):
 
     transform_func = build_transform()
 
-    if training_args.task in ["LM", "Grounding"]:
-        if training_args.task == "Grounding":
-            rank0_print("Adding 1000 special location tokens for Grounding task.")
-            new_special_tokens = [f"<Loc{i}>" for i in range(1000)]
-            tokenizer.add_special_tokens(
-                {"additional_special_tokens": new_special_tokens}
-            )
-            model.llm.resize_token_embeddings(len(tokenizer))
-
+    if training_args.task in ["LM", "Grounding", "Grounding100"]:
         data_module = make_supervised_data_module(
             tokenizer=tokenizer,
             data_args=data_args,
@@ -361,6 +363,8 @@ def train():
         lora_args,
     ) = parser.parse_args_into_dataclasses()
 
+
+        
     if getattr(training_args, "deepspeed", None):
         training_args.distributed_state.distributed_type = DistributedType.DEEPSPEED
 
@@ -370,7 +374,7 @@ def train():
 
     training_args.gradient_checkpointing_kwargs = {"use_reentrant": False}
 
-    if training_args.task in ["LM", "Grounding"]:
+    if training_args.task in ["LM", "Grounding", "Grounding100"]:
         print("training_args.lr_scheduler_type", training_args.lr_scheduler_type)
         trainer = SFTTrainer(
             model=model,

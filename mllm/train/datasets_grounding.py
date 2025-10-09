@@ -24,8 +24,6 @@ logger = logging.getLogger(__name__)
 class GroundingSupervisedDataset(Dataset):
     """Dataset for supervised fine-tuning Visual Grounding."""
 
-    GRID = 1000    
-
     def __init__(
         self,
         raw_data,
@@ -57,7 +55,9 @@ class GroundingSupervisedDataset(Dataset):
         conversations = item["conversations"]
 
         try:
-            images_dict = {"<image>": Image.open(image_path).convert("RGB")}
+            origin_image = Image.open(image_path).convert("RGB")
+            padded_image = self.pad_image_to_square_and_resize(origin_image)
+            images_dict = {"<image>": padded_image}
         except Exception as e:
             logging.error(f"Error loading image {image_path}: {e}")
             raise e
@@ -85,3 +85,18 @@ class GroundingSupervisedDataset(Dataset):
             image_bound=data_dict["image_bound"],
         )
         ### <===
+
+    def pad_image_to_square_and_resize(self, image):
+        w, h = image.size
+        max_size = max(w, h)
+
+        if w == h:
+            return image.resize((448, 448), Image.BICUBIC)
+
+        padded = Image.new('RGB', (max_size, max_size), (255, 255, 255))
+        paste_x = (max_size - w) // 2
+        paste_y = (max_size - h) // 2
+        padded.paste(image, (paste_x, paste_y))
+        padded = padded.resize((448, 448), Image.BICUBIC)
+        
+        return padded

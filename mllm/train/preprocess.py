@@ -247,11 +247,6 @@ def llm_conversation_to_ids(conversation, tokenizer):
         print("\n[Tokens]:")
         print(tokens)
 
-        print("\n[ID -> Token Mapping (sample)]:")
-        sample_ids = input_ids 
-        for token_id in sample_ids:
-            print(f"{token_id} -> '{tokenizer.decode([token_id])}'")
-
         print("=============================================")
         DEBUG_COUNTER -= 1
 
@@ -356,14 +351,10 @@ def preprocess(
     )
 
     if len(images_dict) == 1 and "<image>" in images_dict:
-        if "<image>" in conversations[0]["content"]:
-            conversations[0]["content"] = conversations[0]["content"].replace(
-                "<image>", image_placeholder
-            )
-        else:
-            conversations[0]["content"] = (
-                image_placeholder + "\n" + conversations[0]["content"]
-            )
+        conversations[0]["content"] = (
+        image_placeholder + "\n" + 
+        conversations[0]["content"].replace("<image>", "").strip()
+        )
         input_dict = conversation_to_ids(conversations, tokenizer, max_length)
     else:
         pattern = r"<image_\d+>"

@@ -158,35 +158,29 @@ def get_batch_logps(
     # per_token_logps: 每个位置的logp取值
     # log_prob: 完整回复的 logp 之和
     # average_log_prob: 完整回复中每个词 logp 的平均值
-    ## 注意：
-    ## 计算时注意logits与label对应关系是否正确，当前位置logits应该以后一个词为目标
-    ## 只有输出部分应该被计算在内
     per_token_logps = None
     log_prob = None
     average_log_prob = None
-    shift_logits = logits[..., :-1, :].contiguous()
-    shift_labels = labels[..., 1:].contiguous()  # (batch_size, sequence_length-1)
 
-    valid_mask = shift_labels != -100
-    shift_labels = shift_labels.masked_fill(~valid_mask, 0)
-    batch_size = shift_logits.size(0)
-    vocab_size = shift_logits.size(-1)
-    shift_logits = shift_logits.view(-1, vocab_size)
-    log_probs = F.log_softmax(
-        shift_logits, dim=-1
-    )  # (batch_size*sequence_length, vocab_size)
-    shift_labels = shift_labels.view(-1)  # (batch_size*sequence_length,)
-
+    valid_mask = labels != -100
+    labels_for_gather = labels.masked_fill(~valid_mask, 0)
+    
+    batch_size = logits.size(0)
+    vocab_size = logits.size(-1)
+    logits_flat = logits.view(-1, vocab_size)
+    log_probs = F.log_softmax(logits_flat, dim=-1)
+    labels_flat = labels_for_gather.view(-1)
+    
     per_token_logps = (
-        torch.gather(log_probs, dim=1, index=shift_labels.unsqueeze(1))
+        torch.gather(log_probs, dim=1, index=labels_flat.unsqueeze(1))
         .squeeze(1)
         .view(batch_size, -1)
     )
+    
     per_token_logps = per_token_logps * valid_mask
     log_prob = per_token_logps.sum(-1)
     num_valid_tokens = valid_mask.sum(-1).clamp(min=1)
     average_log_prob = log_prob / num_valid_tokens
-    per_token_logps = torch.concat([torch.zeros(batch_size, 1).to(per_token_logps.device), per_token_logps], dim=1)
     ### <===
 
     assert (

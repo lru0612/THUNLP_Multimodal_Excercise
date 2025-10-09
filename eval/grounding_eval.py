@@ -17,6 +17,19 @@ from mllm.model.processing import ModelProcessor
 from mllm.model.image_processing import ModelImageProcessor
 from utils.file_io import read_jsonlines, read_json
 
+def denorm_box(box, w, h, grid=1000):
+    """将0-grid范围的box映射回原图像尺寸。"""
+    x0, y0, x1, y1 = box
+    max_size = max(w, h)
+    x_offset = (max_size - w) // 2
+    y_offset = (max_size - h) // 2
+    return [
+        x0 / grid * max_size-x_offset,
+        y0 / grid * max_size-y_offset,
+        x1 / grid * max_size-x_offset,
+        y1 / grid * max_size-y_offset,
+    ]
+
 class MLLMEvalModel(MLLMModel):
     def chat(
         self,
@@ -32,7 +45,7 @@ class MLLMEvalModel(MLLMModel):
         prompts, images = self.prepare_chat_inputs(
             tokenizer, system_prompt, [msgs], [image]
         )
-        print("prompts:", prompts)
+        # print("prompts:", prompts)
         inputs = processor(
             prompts,
             images,
@@ -51,7 +64,8 @@ class MLLMEvalModel(MLLMModel):
             }
         else:
             generation_config = {
-                "num_beams": 3,
+                "num_beams": 1,
+                "do_sample": False,
                 "repetition_penalty": 1.2,
             }
 
@@ -60,13 +74,10 @@ class MLLMEvalModel(MLLMModel):
                 **inputs,
                 tokenizer=tokenizer,
                 max_new_tokens=max_new_tokens,
-                decode_text=True,
-                min_new_tokens=3,
                 **generation_config,
             )
-            print("out:", out)
-        print("===================================")
-        return {"content": out[0]}
+        # print("===================================")
+        return {"token_ids": out[0]}
 
     def prepare_chat_inputs(self, tokenizer, system_prompt, msgs_list, images_list):
         prompts, img_inputs = [], []
@@ -104,21 +115,8 @@ def box_iou(boxes1, boxes2):
     iou = inter / union
     return iou, union
 
-GRID = 1000
-
-def denorm_box(box, w, h, grid=GRID):
-    """Map box from 0-grid range back to image size."""
-    x0, y0, x1, y1 = box
-    return [
-            x0 / grid * w,
-            y0 / grid * h,
-            x1 / grid * w,
-            y1 / grid * h,
-        ]
-
-
 def vis_boxes(img, boxes, expr, save_name="output.png"):
-    ### ==> TODO: 可视化Visual Grounding结果，包括给定图像、针对图像中对象的描述和对应对象的坐标框
+    # 可视化Visual Grounding结果，包括给定图像、针对图像中对象的描述和对应对象的坐标框
 
     img = img.copy()
     if img.mode != "RGBA":
@@ -193,8 +191,20 @@ def vis_boxes(img, boxes, expr, save_name="output.png"):
     img = img.convert("RGB")
     img.save(save_name)
 
-    ### <===
+def pad_image_to_square_and_resize(image):
+    w, h = image.size
+    max_size = max(w, h)
 
+    if w == h:
+        return image.resize((448, 448), Image.BILINEAR)
+
+    padded = Image.new('RGB', (max_size, max_size), (255, 255, 255))
+    paste_x = (max_size - w) // 2
+    paste_y = (max_size - h) // 2
+    padded.paste(image, (paste_x, paste_y))
+    padded = padded.resize((448, 448), Image.BICUBIC)
+        
+    return padded
 
 def eval_model(args):
     model = MLLMEvalModel.from_pretrained(
@@ -213,7 +223,7 @@ def eval_model(args):
 
     input_data = read_json(args.question_file)
 
-    ### TODO: Implement inference loop
+    # 推理主循环
     with torch.no_grad():
         correct = total_cnt = 0
         for item in tqdm(input_data):
@@ -223,11 +233,9 @@ def eval_model(args):
 
             # --- 解析 GT bbox -------------------------------------------------
             content = conversations[1]["content"]
-            # 更新正则表达式以匹配 <box>[(x1, y1), (x2, y2)]</box> 格式
-            m = re.search(r"<box>\s*\[\s*\(\s*([\d\.]+)\s*,\s*([\d\.]+)\s*\)\s*,\s*\(\s*([\d\.]+)\s*,\s*([\d\.]+)\s*\)\s*\]\s*</box>", content)
-            assert m, f"bbox not found in: {content}"
-            # m.groups() 会返回 (x1, y1, x2, y2) 四个字符串
-            bbox = [float(x) for x in m.groups()]
+            # 新的解析逻辑：找到所有 <Loc...> 词元并提取数字
+            bbox=json.loads(content)
+            # print("bbox:", bbox)
             # -------------------------------------------------------------------
 
             msgs = [conversations[0]]
@@ -236,54 +244,56 @@ def eval_model(args):
             else:
                 image = Image.open(image).convert("RGB")
             w, h = image.size
-
-            answer = model.chat(
-                image=image,
+            input_image = pad_image_to_square_and_resize(image)
+            answer_dict = model.chat(
+                image=input_image,
                 msgs=msgs,
                 tokenizer=tokenizer,
                 sampling=args.sampling,
                 processor=processor,
             )
+            answer = tokenizer.decode(answer_dict["token_ids"], skip_special_tokens=False)
+            # print("Decoded content:", answer)
+            if hasattr(args, "save_path") and args.save_path:
+                os.makedirs(os.path.dirname(args.save_path), exist_ok=True)
+                with open(args.save_path, "a", encoding="utf-8") as f:
+                    f.write(json.dumps({"question": conversations[0]["content"], "answer": answer}, ensure_ascii=False) + "\n")
 
-            # Calculate acc
-            ### ==> TODO: 实现Visual Grounding的结果准确率计算方法
-            # 更新正则表达式以匹配 <box>[(x1, y1), (x2, y2)]</box> 格式
-            pattern = re.compile(
-                r"<box>\s*\[\s*\(\s*([\d\.]+)\s*,\s*([\d\.]+)\s*\)\s*,\s*\(\s*([\d\.]+)\s*,\s*([\d\.]+)\s*\)\s*\]\s*</box>"
-            )
-            match = pattern.search(answer["content"])
+            try:
+                pred_loc_tokens = re.findall(r"<Loc(\d+)>", answer)
+                if len(pred_loc_tokens) < 4:
+                    match = re.search(r"\[(\d+),\s*(\d+),\s*(\d+),\s*(\d+)\]", answer)
+                    if match:
+                        pred_loc_tokens = list(match.groups())
+                    else:
+                        pred_loc_tokens = re.findall(r"(\d+)", answer)
+            except Exception as e:
+                print(f"Error parsing prediction: {e}")
+                pred_loc_tokens = []
 
-            # ② 备选：四个数字由空格 / 逗号分隔 (这个备选逻辑可能不再需要，但暂时保留以防万一)
-            if match is None:
-                pattern_alt = re.compile(
-                    r"([\d\.]+)[, ]+([\d\.]+)[, ]+([\d\.]+)[, ]+([\d\.]+)"
-                )
-                match = pattern_alt.search(answer["content"])
-
-            if match:
-                # m.groups() 会返回 (x1, y1, x2, y2) 四个字符串
-                coords = match.groups()
-                predict_bbox = [float(c) for c in coords]
+            if len(pred_loc_tokens) >= 4:
+                pred_loc_tokens = pred_loc_tokens[:4]
+                predict_bbox = [float(token) for token in pred_loc_tokens]
             else:
+                print(f"Warning: Found {len(pred_loc_tokens)} location tokens in prediction, expected 4. Treating as a miss.")
                 predict_bbox = [0.0, 0.0, 0.0, 0.0]
+            
             denorm_gt_bbox = denorm_box(bbox, w, h)
             denorm_pred_bbox = denorm_box(predict_bbox, w, h)
 
             # --- 将 list → Tensor[N,4] ---
             pred_tensor = torch.tensor([denorm_pred_bbox], dtype=torch.float32)
-            gt_tensor   = torch.tensor([denorm_gt_bbox],         dtype=torch.float32)
+            gt_tensor   = torch.tensor([denorm_gt_bbox], dtype=torch.float32)
 
             iou = box_iou(pred_tensor, gt_tensor)[0].item()
-            print(f"IOU: {iou}")
+            # print(f"IOU: {iou}")
             # -----------------------------
 
             total_cnt += 1
             if iou >= 0.5:
                 correct += 1
-            ### <===
 
-            # Visualize VG results
-            ### ==> TODO: 实现Visual Grounding结果的可视化
+            # 可视化VG结果
             os.makedirs(args.image_dir, exist_ok=True)
             if args.vis_nums > 0:
                 vis_boxes(
@@ -293,7 +303,6 @@ def eval_model(args):
                     save_name=f"{args.image_dir}/output_{total_cnt}.png",
                 )
                 args.vis_nums -= 1
-            ### <===
 
     print(f"Evaluating {args.question_file} ...")
     print(f"Precision @ 1: {correct / total_cnt} \n")
@@ -303,6 +312,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model-name-or-path", type=str)
     parser.add_argument("--question-file", type=str)
+    parser.add_argument("--save-path", type=str, default="")
     parser.add_argument("--image-dir", type=str, default="")
     parser.add_argument("--sampling", action="store_true")
     parser.add_argument("--vis-nums", type=int, default=0)

@@ -64,7 +64,7 @@
 #     --task LM
 
 export PYTHONPATH=$PYTHONPATH:`realpath .`
-export CUDA_VISIBLE_DEVICES=0,1,2,3
+export CUDA_VISIBLE_DEVICES=1,2,3,4
 
 GPUS_PER_NODE=4
 NNODES=1
@@ -85,6 +85,10 @@ DISTRIBUTED_ARGS="
     --master_addr $MASTER_ADDR \
     --master_port $MASTER_PORT
 "
+learning_rate=2e-6
+per_device_train_batch_size=8
+batch_size=32
+steps=100
 torchrun $DISTRIBUTED_ARGS mllm/finetune.py  \
     --model_name_or_path $MODEL \
     --data_path $DATA \
@@ -99,29 +103,28 @@ torchrun $DISTRIBUTED_ARGS mllm/finetune.py  \
     --do_train \
     --do_eval \
     --tune_vision true \
+    --tune_llm true \
     --model_max_length $MODEL_MAX_Length \
     --max_slice_nums 9 \
-    --max_steps 200 \
-    --eval_steps 10 \
-    --output_dir output/finetune/mllm_sft_training_batch80_lr4e-5_steps200_uselora_cosine_warmup30 \
-    --logging_dir output/finetune/mllm_sft_training_batch80_lr4e-5_steps200_uselora_cosine_warmup30/log \
+    --max_steps $steps \
+    --eval_steps 5 \
+    --output_dir output/finetune/mllm_sft_training_batch${batch_size}_lr${learning_rate}_steps${steps}_cosine \
+    --logging_dir output/finetune/mllm_sft_training_batch${batch_size}_lr${learning_rate}_steps${steps}_cosine/log \
     --logging_strategy "steps" \
-    --per_device_train_batch_size 20 \
+    --per_device_train_batch_size $per_device_train_batch_size \
     --per_device_eval_batch_size 8 \
     --gradient_accumulation_steps 1 \
     --evaluation_strategy "steps" \
     --save_strategy "steps" \
-    --save_steps 90 \
+    --save_steps 50 \
     --save_total_limit 10 \
-    --learning_rate 4e-5 \
+    --learning_rate $learning_rate \
     --weight_decay 0.1 \
     --adam_beta2 0.95 \
-    --warmup_steps 30 \
+    --warmup_ratio 0.1 \
     --lr_scheduler_type "cosine" \
     --logging_steps 1 \
     --gradient_checkpointing true \
     --deepspeed mllm/ds_config_zero2_autoscheduler.json \
     --report_to "tensorboard" \
-    --use_lora True \
-    --tune_llm False --tune_vision True \
     --task LM

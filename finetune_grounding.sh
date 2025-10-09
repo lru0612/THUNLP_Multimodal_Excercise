@@ -8,13 +8,13 @@ export TORCH_USE_CUDA_DSA=1
 GPUS_PER_NODE=8
 NNODES=1
 NODE_RANK=0
-MASTER_ADDR=localhost
-MASTER_PORT=6002 
+export MASTER_ADDR=localhost
+export MASTER_PORT=6002 
 
-MODEL="MLLM_sft_training"
+MODEL="output/finetune/mllm_sft_training_batch32_lr2e-6_steps100_cosine"
  
-DATA="data/train_minicpmv_grounding.json" 
-EVAL_DATA="data/val_minicpmv_grounding.json"
+DATA="data/grounding/train_minicpmv_grounding.json" 
+EVAL_DATA="data/grounding/val_minicpmv_grounding.json"
 MODEL_MAX_Length=2048
 DISTRIBUTED_ARGS="
     --nproc_per_node $GPUS_PER_NODE \
@@ -23,9 +23,10 @@ DISTRIBUTED_ARGS="
     --master_addr $MASTER_ADDR \
     --master_port $MASTER_PORT
 "
-learning_rate=4e-5
-per_device_train_batch_size=20
-global_batch_size=160
+learning_rate=5e-6
+per_device_train_batch_size=16
+gradient_accumulation_steps=4
+batch_size=512
 torchrun $DISTRIBUTED_ARGS mllm/finetune.py  \
     --eval_data_path $EVAL_DATA \
     --do_eval \
@@ -40,26 +41,26 @@ torchrun $DISTRIBUTED_ARGS mllm/finetune.py  \
     --fp16 false \
     --fp16_full_eval false \
     --do_train \
-    --tune_vision true \
+    --tune_vision false \
     --tune_llm true \
     --model_max_length $MODEL_MAX_Length \
     --max_slice_nums 9 \
-    --num_train_epochs 1.5 \
-    --output_dir output/grounding/fintuned_model_lr${learning_rate}_batch${global_batch_size}_gradnorm1_normalize_box_specialtoken \
-    --logging_dir output/grounding/fintuned_model_lr${learning_rate}_batch${global_batch_size}_gradnorm1_normalize_box_specialtoken/log \
+    --max_steps 1000 \
+    --output_dir output/grounding/fintuned_model_lr${learning_rate}_batch${batch_size}_gradnorm1_grounding_lossmodified \
+    --logging_dir output/grounding/fintuned_model_lr${learning_rate}_batch${batch_size}_gradnorm1_grounding_lossmodified/log \
     --logging_strategy "steps" \
     --per_device_train_batch_size $per_device_train_batch_size \
-    --per_device_eval_batch_size 16 \
-    --gradient_accumulation_steps 1 \
+    --per_device_eval_batch_size 20 \
+    --gradient_accumulation_steps $gradient_accumulation_steps \
     --evaluation_strategy "steps" \
     --save_strategy "steps" \
     --save_steps 200 \
-    --save_total_limit 5 \
+    --save_total_limit 3 \
     --learning_rate $learning_rate \
     --max_grad_norm 1.0 \
-    --weight_decay 0.1 \
+    --weight_decay 0.05 \
     --adam_beta2 0.95 \
-    --warmup_ratio 0.15\
+    --warmup_ratio 0.1\
     --lr_scheduler_type "cosine" \
     --logging_steps 1 \
     --gradient_checkpointing true \

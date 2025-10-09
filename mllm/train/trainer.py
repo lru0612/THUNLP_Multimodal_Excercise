@@ -26,38 +26,17 @@ class SFTTrainer(Trainer):
         else:
             with self.model._enable_peft_forward_hooks(**inputs):
                 outputs = self.model.base_model(data=inputs, use_cache=False)
-
+        
         if labels is not None:
             ### ===> TODO: 实现监督微调损失函数计算
-            # 注意检查当前位置的 logits 对应的目标输出是否为下一个token
             logits = outputs.get("logits")
-            shift_logits = logits[..., :-1, :].contiguous()
-            shift_labels = labels[..., 1:].contiguous()
-
-            vocab_size = shift_logits.size(-1)
-            shift_logits = shift_logits.view(-1, vocab_size)
-            shift_labels = shift_labels.view(-1)
-            mask = shift_labels != -100
-            # print("logits.shape:", logits.shape)
-            # print("labels.shape:", labels.shape)
-            # print("shift_logits.shape:", shift_logits.shape)
-            # print("shift_logits:", shift_logits)
-            # print("shift_labels.shape:", shift_labels.shape)
-            # print("shift_labels:", shift_labels)
-            # print("mask.shape:", mask.shape)
-            # print("mask:", mask)
             
-            # ===> 将 shift_labels 转换为文本
-            # 过滤掉不需要计算 loss 的 token (-100)
-            # 使用 tokenizer 解码
-            # valid_labels = shift_labels[mask]
-            # if valid_labels.numel() > 0:
-            #     decoded_labels = self.tokenizer.decode(valid_labels, skip_special_tokens=True)
-            #     print("Decoded Labels (batch combined):", decoded_labels)
-            # <===
-            # valid_logits = shift_logits[mask]
+            vocab_size = logits.size(-1)
+            shift_logits = logits.view(-1, vocab_size)
+            shift_labels = labels.view(-1)
+            
             loss_fct = nn.CrossEntropyLoss(ignore_index=-100)
-            loss = loss_fct( shift_logits, shift_labels )
+            loss = loss_fct(shift_logits, shift_labels)
             ### <===
         else:
             if isinstance(outputs, dict) and "loss" not in outputs:
@@ -219,7 +198,7 @@ class SFTTrainer(Trainer):
         """
         model.train()
         inputs = self._prepare_inputs(inputs)
-
+        
         if is_sagemaker_mp_enabled():
             loss_mb = smp_forward_backward(
                 model, inputs, self.args.gradient_accumulation_steps
@@ -240,7 +219,7 @@ class SFTTrainer(Trainer):
                 scaled_loss.backward()
         else:
             self.accelerator.backward(loss)
-
+        
         return loss.detach() / self.args.gradient_accumulation_steps
 
     def _save(self, output_dir: Optional[str] = None, state_dict=None):
@@ -311,15 +290,6 @@ class PreferenceTrainer(Trainer):
         reference_rejected_logps: torch.FloatTensor,
     ) -> Tuple[torch.FloatTensor, torch.FloatTensor, torch.FloatTensor]:
         ### ===> TODO: 实现偏好对齐训练 Loss 计算
-        if policy_chosen_logps.dim() > 1:
-            policy_chosen_logps = policy_chosen_logps.mean(dim=1)
-        if policy_rejected_logps.dim() > 1:
-            policy_rejected_logps = policy_rejected_logps.mean(dim=1)
-        if reference_chosen_logps.dim() > 1:
-            reference_chosen_logps = reference_chosen_logps.mean(dim=1)
-        if reference_rejected_logps.dim() > 1:
-            reference_rejected_logps = reference_rejected_logps.mean(dim=1)
-
         chosen_rewards = beta * (policy_chosen_logps - reference_chosen_logps)
         rejected_rewards = beta * (policy_rejected_logps - reference_rejected_logps)
         losses = -F.logsigmoid(chosen_rewards) - 0.5 * (
@@ -392,12 +362,18 @@ class PreferenceTrainer(Trainer):
         chosen_labels = concatenated_labels[:batch_size]
         rejected_labels = concatenated_labels[batch_size:]
 
-        policy_win_logp = get_batch_logps(
-            chosen_logits, chosen_labels, self.tokenizer, return_per_token_logp=True
+        policy_win_per_token_logp, policy_win_sum_logp, policy_win_avg_logp = get_batch_logps(
+            chosen_logits, chosen_labels, self.tokenizer, return_all=True
         )
-        policy_rej_logp = get_batch_logps(
-            rejected_logits, rejected_labels, self.tokenizer, return_per_token_logp=True
+        policy_rej_per_token_logp, policy_rej_sum_logp, policy_rej_avg_logp = get_batch_logps(
+            rejected_logits, rejected_labels, self.tokenizer, return_all=True
         )
+        if args.preference_use_average_logp:
+            policy_win_logp = policy_win_avg_logp
+            policy_rej_logp = policy_rej_avg_logp
+        else:
+            policy_win_logp = policy_win_sum_logp
+            policy_rej_logp = policy_rej_sum_logp
         ### <===
 
         # print("trainer: ref_win_logp:", ref_win_logp.dtype, ref_win_logp.item())
